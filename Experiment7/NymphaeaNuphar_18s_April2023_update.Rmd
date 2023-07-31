@@ -1,0 +1,309 @@
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir ="/Users/briannepalmer/Library/CloudStorage/OneDrive-Personal/LeafFossilization/Leaf Fossilization R/Experiment 7")
+```
+
+This document contains all the code for Experiment 7 -- Nymphaea Nuphar Buried and Floating. The primary file used here contains the ITS sequences for the water lily leaves and for the soil and water. 
+
+```{r, Load Libraries}
+library(phyloseq)
+library(plyr)
+library(data.table)
+library(tidyverse)
+library(vegan)
+library(ecodist)
+library(RColorBrewer)
+library(ape)
+library(ampvis2)
+library(ggpubr)
+library(ggvenn)
+library(ggpattern)
+library(rstatix)
+library(ggrepel)
+library(funrar)
+library(DESeq2)
+```
+
+```{r, Load Data}
+S18 <- fread("/Users/briannepalmer/Library/CloudStorage/OneDrive-Personal/LeafFossilization/Leaf Fossilization R/Experiment 7/data/Experiment7/experiment7_18S.csv")
+S18 <- S18 %>% filter(kingdom %in% c("Eukaryota", "Eukaryota:mito", "Eukaryota:plas"))
+```
+
+```{r, metadata}
+metadata <- fread("/Users/briannepalmer/Library/CloudStorage/OneDrive-Personal/LeafFossilization/Leaf Fossilization R/Experiment 7/data/Experiment7/experiment7_metadata.csv")
+metadata <- metadata %>% filter(Type == "Plant")
+
+x18S <- seq(1:54)
+```
+
+```{r}
+ASV.18S <- as.vector(paste0("ASV", x18S))
+S18$ASV <- ASV.18S
+
+S18[,c(2:13)][is.na(S18[,c(2:13)])] <- 0
+```
+
+```{r}
+tax.only <- S18[,c(1, 14:21)]
+count.only <-  S18[,c(2:13)]
+
+otu.table <- S18[,c(22, 2:13)]
+otu.table <- otu.table[,-1]
+otu.table <- as.matrix(otu.table)
+rownames(otu.table) <- S18$otu
+
+tax.table <- S18[,c(22,14:21)]
+tax.table <- as.matrix(tax.table)
+rownames(tax.table) <- S18$ASV
+tax.table <- tax.table[,-1]
+```
+
+```{r}
+# make OTUs columns 
+transformed <- t(count.only)
+colnames(transformed) <- tax.only$Feature.ID
+transformed[is.na(transformed)] <-0
+transformed[c(1:54)] <- sapply(transformed[c(1:54)],as.numeric)
+transformed <- as.matrix(transformed)
+transformed <- matrix(
+  as.numeric(transformed), ncol = 54) 
+```
+
+```{r}
+# make otu plot 
+library(vegan)
+otu.bray <- vegdist(transformed, method = "bray")
+
+library(ecodist)
+pcoaVS <- pco(otu.bray, negvals = "zero", dround = 0) # if negvals = 0 sets all negative eigenvalues to zero
+
+# Make dataframe for plot with vectors and metadata
+
+pcoa1 = pcoaVS$vectors[,1] # adds the points of the NMDS 1 dimmension
+pcoa2 = pcoaVS$vectors[,2] # adds the points of the NMDS 2 dimmension
+
+MDS = data.frame(pcoa1 = pcoa1, pcoa2 = pcoa2)
+MDS = cbind(MDS, metadata)
+
+```
+
+```{r}
+adonis2(transformed ~ Location, metadata) # 0.024
+adonis2(transformed ~ plant, metadata) # 0.61
+adonis2(transformed[c(1:3),] ~ SampleID, metadata %>% filter(treatment == "NuBot"))
+adonis2(transformed[c(4:6),] ~ SampleID, metadata %>% filter(treatment == "NuTop"))
+adonis2(transformed[c(7:9),] ~ SampleID, metadata %>% filter(treatment == "NyBot"))
+adonis2(transformed[c(10:12),] ~ SampleID, metadata %>% filter(treatment == "NyTop"))
+```
+
+
+```{r}
+pcoa <- ggplot(data = MDS, aes(x = pcoa1, y = pcoa2, color = Treatment)) + geom_point(size =6, alpha = 0.5) + theme_bw() + theme(text=element_text(size=20),legend.title=element_blank(), legend.position = "bottom") +labs(x = "PCOA1", y = "PCOA2") + ggtitle("B.") + xlim(-0.7, 0.7) + ylim(-0.7, 0.7) + scale_color_manual(values = c('#88CCEE','#882255', '#44AA99','#EE8866','#DDCC77','#332288'))
+
+pcoa
+
+ggplot(data = MDS, aes(x = pcoa1, y = pcoa2, color = Treatment)) + geom_point(size =6, alpha = 0.5) + theme_bw() + theme(text=element_text(size=20),legend.title=element_blank(), legend.position = "bottom") +labs(x = "PCOA1", y = "PCOA2") + ggtitle("B.") + scale_color_manual(values = c('#88CCEE','#882255', '#44AA99','#EE8866','#DDCC77','#332288'))
+
+
+png("figures/Experiment7/June_Revision_Figures /18S_forposter.png", width = 15, height = 20, units = 'cm', res = 300)
+ggplot(data = MDS, aes(x = pcoa1, y = pcoa2, color = Treatment)) + geom_point(size =8, alpha = 0.5) + theme_bw() + theme(text=element_text(size=20),legend.title=element_blank(), legend.position = "right") +labs(x = "PCOA1", y = "PCOA2") + xlim(-0.7, 0.7) + ylim(-0.7, 0.7) + scale_color_manual(values = c('#88CCEE','#882255', '#44AA99','#EE8866','#DDCC77','#332288'))
+dev.off()
+```
+
+```{r}
+pal <- palette(c('#882255', '#88CCEE', '#EE8866', '#44AA99', '#117733', '#332288', '#DDCC77', '#999933', '#CC6677', '#AA4499', '#DDDDDD'))
+```
+
+RELATIVE ABUNDANCE OF PHYLA
+
+```{r}
+# remove ASVs that have no information 
+pivot.18S <- S18 %>% filter(kingdom != "Unassigned", kingdom != "Alveolata") %>% pivot_longer(cols = c(NuBotR1:NyTopR3), names_to = "SampleID")
+
+# if there are blanks, these should be NA
+pivot.18S[pivot.18S == ""] <- NA   
+
+pivot.18S <- pivot.18S %>% group_by(SampleID, kingdom, phylum, class, order, family, genus, species, ASV) %>% dplyr::summarize(value = sum(value))
+
+phylum.18S <- pivot.18S %>% dplyr::select(SampleID, kingdom, phylum, value) %>% group_by(SampleID, kingdom, phylum) %>% dplyr::summarize(value = sum(value))
+
+phylum.18S <- phylum.18S %>% pivot_wider(names_from = phylum, values_from = value)
+
+phylum.18S[c(3:10)] <- sapply(phylum.18S[c(3:10)],as.numeric)
+phylum.18S[is.na(phylum.18S)] <- 0
+
+phylum.18S <- merge(metadata, phylum.18S, by = "SampleID")
+```
+
+```{r}
+# make a longer table, this is easier to graph with (hence why I named it ggplot)
+phylum.ggplot.18S <- pivot_longer(phylum.18S, cols = Fungi:`Streptophyta:plas`,names_to = "phylum", values_to = "value") %>% mutate(rel = value/sum(value))
+```
+
+```{r}
+# group phyla in order and choose the 10 most abundant 
+phylum.group <- pivot.18S %>% group_by(phylum) %>% dplyr::summarise(value = sum(value)) 
+phylum.group <- phylum.group[order(-phylum.group$value),]
+phylum.10 <- phylum.group[c(1:10),]
+```
+
+```{r}
+phylum.10.plot <- ggplot(
+    phylum.ggplot.18S %>% filter(phylum %in% phylum.10$phylum),
+    aes(fill = phylum, y = value, x = Treatment)
+  ) + geom_bar(position = "fill", stat = "identity") + labs(y = "Relative Abundance") + theme_bw() + scale_fill_manual(values = pal) +
+  theme(axis.text.x = element_text(
+    angle = 45,
+    vjust = 1,
+    hjust = 1),legend.position = "right", text=element_text(size=20), axis.title.x = element_blank(), legend.title=element_blank()) + ggtitle("C") 
+
+png("figures/Experiment7/June_Revision_Figures /diatomphylum.png", res = 300, height = 40, width = 40, units = "cm")
+phylum.10.plot
+dev.off()
+```
+
+```{r}
+otu.table <- S18[,c(2:13)]
+otu.table <- as.matrix(otu.table)
+rownames(otu.table) <- S18$ASV
+tax.table <- S18[,c(14:21)]
+tax.table <- as.matrix(tax.table)
+rownames(tax.table) <- S18$ASV
+
+otu.table <- otu_table(otu.table, taxa_are_rows = TRUE)
+tax.table <- tax_table(tax.table)
+sam.data <- as.matrix(metadata)
+sam.data <- sample_data(metadata)
+rownames(sam.data) <- metadata$SampleID
+```
+
+```{r}
+ps <- phyloseq(otu.table, tax.table, sam.data)
+random_tree = rtree(ntaxa(ps), rooted=TRUE, tip.label=taxa_names(ps))
+
+ps = merge_phyloseq(ps,random_tree)
+ps <- subset_taxa(ps, kingdom !="Unassigned")
+ps <- subset_taxa(ps, phylum != "NA")
+```
+Plot richness and diversity 
+```{r}
+p = plot_richness(ps, x="Treatment", measures=c("Observed","Shannon", "Simpson")) + geom_point() + theme_bw() + geom_boxplot(aes(fill = Treatment)) + scale_fill_manual(values = c('#88CCEE','#882255', '#44AA99','#EE8866','#DDCC77','#332288')) + theme(axis.text.x = element_text(angle = 90, vjust = 1, hjust=1, size = 20), legend.position = "none", axis.title.x = element_blank(), legend.title=element_blank(), text=element_text(size=20), plot.margin =margin(r = 30)) + ggtitle("A.")
+
+p
+```
+
+Make a new dataframe with the ASVs from the pivot dataframe (leaves only for the venn diagram)
+
+##### NEED TO CHANGE THIS BECAUSE IT IS ONLY FOR ITS, 18S WAS DELETED BUT I SAVED THE FIGURES AND HAVEN'T UPDATED THE CODE #####
+```{r}
+leaves.only <- ITS %>% filter(kingdom != "Unassigned") %>% pivot_longer(cols = c(NuBotR1:NyTopR3), names_to = "SampleID")
+
+leaves.only <- leaves.only %>% group_by(SampleID, kingdom, phylum, class, order, family, genus, species, ASV) %>% dplyr::summarize(value = sum(value))
+
+ASV <- leaves.only %>% dplyr::select(SampleID, ASV, value) # 
+ASV <- ASV %>% pivot_wider(names_from = ASV, values_from = value)
+ASV[c(9:1138)] <- sapply(ASV[c(9:1138)],as.numeric)
+ASV[c(9:1138)][is.na(ASV[c(9:1138)])] <- 0
+ASV <- merge(metadata, ASV)
+ASV.gp <- ASV %>% group_by(SampleID, Location, Plant, Treatment) %>% summarize_at(vars(ASV1107:ASV147), sum)
+```
+
+```{r}
+ASV.long <- pivot_longer(ASV.gp, cols = ASV1107:ASV147, names_to = "ASV", values_to = "count")
+
+y <- ASV.long %>% filter(Plant != "None") %>% dplyr::select(Treatment, ASV, count)
+
+NuBot = y %>% filter(Treatment == "Nuphar_Sunken")  %>% filter(count >0) %>% dplyr::select(ASV) #476
+NuTop = y %>% filter(Treatment == "Nuphar_Floating")  %>% filter(count >0) %>% dplyr::select(ASV) #427
+NyBot = y %>% filter(Treatment == "Nymphaea_Sunken")  %>% filter(count >0) %>% dplyr::select(ASV) #371
+NyTop = y %>% filter(Treatment == "Nymphaea_Floating")  %>% filter(count >0) %>% dplyr::select(ASV) #366
+
+
+y <- rbind(NuBot, NuTop, NyBot, NyTop)
+
+Treatment <- c(rep("Nu.Buried", 476), rep("Nu.Floating", 427), rep("Ny.Buried", 371), rep("Ny.Floating", 366))
+
+y$Treatment <- Treatment
+
+x <- list(NuS = y$ASV[1:476], NuF = y$ASV[477:903], NyS = y$ASV[904:1274], NyF = y$ASV[1275:1640])
+
+```
+
+```{r, echo=FALSE}
+venn.e <- ggvenn(
+  x, 
+  fill_color = pal,
+  stroke_size = 0.5, set_name_size = 3.5, show_percentage = TRUE,  text_size = 4) 
+
+pdf("figures/Experiment7/NymphaeaNuphar_Figures_April2023/venn_ITS.pdf")
+venn.f
+dev.off()
+```
+
+Make heatmaps with ampvis 
+
+```{r}
+otu.table <- as.data.frame(ps@otu_table)
+tax.table <- as.data.frame(ps@tax_table)
+
+d <- amp_load(otutable = otu.table,
+              metadata = metadata,
+              taxonomy = tax.table)
+
+amp_rarecurve(
+  d,
+  stepsize = 1000,
+  color_by = "SampleID",
+  facet_by = NULL,
+  facet_scales = "fixed"
+)
+
+d.rare <-amp_rarefy(d, 15606)
+```
+
+```{r}
+tax_vector <- c("g__uncultured", "NA")
+sam_vector <- c()
+d.known.genera <- amp_filter_taxa(d.rare, 
+                                  tax_vector = tax_vector, 
+                                  remove = TRUE)
+
+d.known.genera <- amp_filter_samples(d.known.genera, 
+                                  Type == "Plant")
+
+genus.heatmap.f <- amp_heatmap(data = d.rare, 
+             tax_aggregate = "Genus",
+             tax_add = "Phylum",
+             group_by = c("Treatment"),
+             tax_show = 30,
+             plot_colorscale = "log10", 
+             plot_values = FALSE)
+genus.heatmap.f <- genus.heatmap.f + ggtitle("B")+ theme(text = element_text(size = 12))
+```
+
+Determine differences in richness and diversity 
+```{r}
+alpha <- amp_alpha_diversity(d.rare)
+
+rich.lm <- lm(ObservedOTUs ~ Plant, data = alpha %>% filter(Plant != "None"))
+rich.aov <- aov(rich.lm)
+TukeyHSD(rich.aov)
+summary(rich.aov)
+
+div.lm <- lm(Shannon ~ Location, data = alpha %>% filter(Plant != "None"))
+div.aov <- aov(div.lm)
+summary(div.aov)
+
+div.lm <- lm(Simpson ~ Location, data = alpha%>% filter(Plant != "None"))
+div.aov <- aov(div.lm)
+summary(div.aov)
+```
+
+```{r}
+library(patchwork)
+
+png("figures/Experiment7/NymphaeaNuphar_Figures_April2023/diatomfigures_revision.png", width = 39, height = 24, units = 'cm', res = 300)
+p + pcoa
+dev.off()
+```

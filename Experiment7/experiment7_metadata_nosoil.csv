@@ -1,0 +1,13 @@
+SampleID,Description,Plant ,Location ,Treatment ,Type
+NuBotR1,NuBotR1,Nuphar,Buried,NupharBuried,Plant
+NuBotR2,NuBotR2,Nuphar,Buried,NupharBuried,Plant
+NuBotR3,NuBotR3,Nuphar,Buried,NupharBuried,Plant
+NuTopR1,NuTopR1,Nuphar,Floating,NupharFloating,Plant
+NuTopR2,NuTopR2,Nuphar,Floating,NupharFloating,Plant
+NuTopR3,NuTopR3,Nuphar,Floating,NupharFloating,Plant
+NyBotR1,NyBotR1,Nymphaea,Buried,NymphaeaBuried,Plant
+NyBotR2,NyBotR2,Nymphaea,Buried,NymphaeaBuried,Plant
+NyBotR3,NyBotR3,Nymphaea,Buried,NymphaeaBuried,Plant
+NyTopR1,NyTopR1,Nymphaea,Floating,NymphaeaFloating,Plant
+NyTopR2,NyTopR2,Nymphaea,Floating,NymphaeaFloating,Plant
+NyTopR3,NyTopR3,Nymphaea,Floating,NymphaeaFloating,Plant

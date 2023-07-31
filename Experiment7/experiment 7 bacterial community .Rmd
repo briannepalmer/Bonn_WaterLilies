@@ -1,0 +1,194 @@
+---
+---
+title: "Experiment 7 Bacterial Community"
+author: "Brianne"
+date: '2022-07-22'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/Users/briannepalmer/Library/CloudStorage/OneDrive-Personal/Leaf Fossilization Experiment 7/Experiment 7")
+```
+
+required Libraries 
+```{r}
+library(tidyverse)
+```
+
+```{r}
+pal <- palette(c("#0073C2FF", "#EFC000FF" , "#f08080", "#CD534CFF"))
+pal <- colorRampPalette(pal)(25)
+```
+
+
+Load bacteria OTU data and create a new column for relative abundance, use relative abundance values throughout
+
+```{r}
+diatoms <- fread("waterlilies_.txt")
+diatoms <- diatoms %>% dplyr::rename(OTU = V2)
+diatoms <- diatoms %>%  add_count(OTU)  %>% filter(kingdom != "k__metazoa") %>% filter(order != "o__nymphaeales")
+diatoms.gp <- diatoms %>% group_by(SampleID, OTU) %>% summarize(n = sum(n))
+diatoms.gp <- diatoms.gp %>% mutate(rel = n / sum(n))
+```
+Load metadata file
+```{r}
+SampleID <- unique(diatoms$SampleID)
+plant <- c("nuphar", "nuphar", "nuphar", "nuphar", "nuphar", "nuphar", "nymphaea", "nymphaea", "nymphaea", "nymphaea", "nymphaea", "nymphaea")
+Location <- c("Bottom", "Bottom", "Bottom", "Top", "Top", "Top", "Bottom", "Bottom", "Bottom", "Top", "Top", "Top")
+Replicate <- c("R1", "R2", "R3","R1", "R2", "R3","R1", "R2", "R3","R1", "R2", "R3")
+Treatment <-c("nuphar_bottom", "nuphar_bottom", "nuphar_bottom", "nuphar_top", "nuphar_top", "nuphar_top", "nymphaea_bottom", "nymphaea_bottom", "nymphaea_bottom", "nymphaea_top", "nymphaea_top", "nymphaea_top")
+
+metadata <- data.frame(SampleID, Treatment, plant, Replicate, Location)
+
+```
+
+Transpose the 'bacteria' file so the OTUs are columns, make all OTU values numeric and make NAs = 0. Then group by SampleID to get 30 lines and create a new file with the OTU values only 
+```{r}
+diatoms.t <- diatoms.gp %>% pivot_wider(names_from =OTU, values_from = rel)
+diatoms.t[c(3:462)] <- sapply(diatoms.t[c(3:462)],as.numeric)
+diatoms.t[c(3:462)][is.na(diatoms.t[c(3:462)])] <-0
+diatoms.t <- diatoms.t %>% group_by(SampleID) %>% summarize_all(sum)
+otu.only <- diatoms.t[3:462]
+```
+
+```{r}
+phylum <-  diatoms %>% group_by(SampleID, kingdom, phylum) %>% summarize(n = sum(n))%>% mutate(rel = n / sum(n))
+phylum <- phylum %>% dplyr::select(SampleID, kingdom, phylum, rel)
+phylum <- phylum %>% pivot_wider(names_from = phylum, values_from = rel)
+phylum[c(3:30)] <- sapply(phylum[c(3:30)],as.numeric)
+phylum[is.na(phylum)] <- 0
+
+phylum <- as.data.frame(c(metadata, phylum))
+phylum.ggplot <- pivot_longer(phylum, cols = p__apicomplexa:p__entomophthoromycota,names_to = "phylum", values_to = "count")
+```
+
+
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=50)}
+ggplot(phylum.ggplot, aes(fill = phylum, y = count, x = Treatment)) + geom_bar(position = "fill", stat = "identity")  + theme(axis.text.x = element_text(size = 10)) + theme(legend.position = "right") + labs(y = "Relative Abundance")  +
+  theme(axis.text.x = element_text(
+    angle = 90,
+    vjust = .5,
+    hjust = 1
+  )) + facet_grid(. ~ kingdom)
+
+```
+
+Which phyla vary by Treatment
+
+```{r}
+phylum.anova <- phylum.ggplot %>% group_by(phylum) %>%
+  do(broom::tidy(TukeyHSD(aov(count ~ Treatment, data = .)))) %>%
+  ungroup
+
+phylum.anova.treatment <- phylum.anova %>% filter(adj.p.value < 0.05)
+```
+
+```{r}
+diatoms.all <- as.data.frame(c(metadata, diatoms.t))
+diatoms.all$Treatment <- as.factor(diatoms.all$Treatment)
+```
+
+
+```{r}
+library(vegan)
+claytop.rich <- specnumber((bacteria.all %>% filter(Treatment == "clay_top"))[-c(1:7)])
+claybot.rich <- specnumber((bacteria.all %>% filter(Treatment == "clay_bottom" ))[-c(1:7)])
+controltop.rich <- specnumber((bacteria.all %>% filter(Treatment == "control_top" ))[-c(1:7)])
+controlbot.rich <- specnumber((bacteria.all %>% filter(Treatment == "control_bottom" ))[-c(1:7)])
+glrich <- specnumber((bacteria.all %>% filter(Treatment == "greenleaf" ))[-c(1:7)])
+monttop.rich <- specnumber((bacteria.all %>% filter(Treatment == "montmorillonite_top" ))[-c(1:7)])
+montbot.rich <- specnumber((bacteria.all %>% filter(Treatment == "montmorillonite_bottom" ))[-c(1:7)])
+pondtop.rich <- specnumber((bacteria.all %>% filter(Treatment == "pond_top" ))[-c(1:7)])
+pondlbot.rich <- specnumber((bacteria.all %>% filter(Treatment == "pond_bottom" ))[-c(1:7)])
+sandtop.rich <- specnumber((bacteria.all %>% filter(Treatment == "sand_top" ))[-c(1:7)])
+sandbot.rich <- specnumber((bacteria.all %>% filter(Treatment == "sand_bottom" ))[-c(1:7)])
+```
+
+```{r}
+claytop.div <- vegan::diversity((bacteria.all %>% filter(Treatment == "clay_top"))[-c(1:7)])
+claybot.div <- vegan::diversity((bacteria.all %>% filter(Treatment == "clay_bottom" ))[-c(1:7)])
+controltop.div <- vegan::diversity((bacteria.all %>% filter(Treatment == "control_top" ))[-c(1:7)])
+controlbot.div <- vegan::diversity((bacteria.all %>% filter(Treatment == "control_bottom" ))[-c(1:7)])
+gldiv <- vegan::diversity((bacteria.all %>% filter(Treatment == "greenleaf" ))[-c(1:7)])
+monttop.div <- vegan::diversity((bacteria.all %>% filter(Treatment == "montmorillonite_top" ))[-c(1:7)])
+montbot.div <- vegan::diversity((bacteria.all %>% filter(Treatment == "montmorillonite_bottom" ))[-c(1:7)])
+pondtop.div <- vegan::diversity((bacteria.all %>% filter(Treatment == "pond_top" ))[-c(1:7)])
+pondlbot.div <- vegan::diversity((bacteria.all %>% filter(Treatment == "pond_bottom" ))[-c(1:7)])
+sandtop.div <- vegan::diversity((bacteria.all %>% filter(Treatment == "sand_top" ))[-c(1:7)])
+sandbot.div <- vegan::diversity((bacteria.all %>% filter(Treatment == "sand_bottom" ))[-c(1:7)])
+```
+
+
+```{r}
+richness <- c(claytop.rich,claybot.rich,controltop.rich,controlbot.rich, glrich,monttop.rich, montbot.rich, pondtop.rich,pondlbot.rich,sandtop.rich, sandbot.rich)
+diversity <- c(claytop.div,claybot.div,controltop.div,controlbot.div, gldiv,monttop.div, montbot.div, pondtop.div,pondlbot.div,sandtop.div, sandbot.div)
+```
+
+```{r}
+# make new data frame 
+
+rich.div <- data.frame(bacteria.all$Treatment, bacteria.all$Substrate, bacteria.all$Location, richness, diversity)
+```
+
+```{R}
+rich.lm <- lm(richness ~ bacteria.all.Substrate, data = rich.div)
+rich.aov <- aov(rich.lm)
+summary(rich.aov)# there is a difference in OTU richness 
+
+TukeyHSD(rich.aov)
+```
+
+```{r}
+div.lm <- lm(diversity ~ bacteria.all.Substrate, data = rich.div)
+div.aov <- aov(div.lm)
+summary(div.aov)# there is a difference in OTU diversity 
+TukeyHSD(div.aov)
+```
+
+```{r}
+
+richness.plot <- ggplot(data = rich.div, aes(x = bacteria.all.Treatment, y = richness, fill = bacteria.all.Treatment)) + geom_boxplot() + theme_bw() + theme(legend.position = "none") + theme(text=element_text(size=20)) + labs(y = "# of OTUs", x = "Treatment") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+richness.plot
+
+diversiy.plot <- ggplot(data = rich.div, aes(x = bacteria.all.Treatment, y = diversity, fill = bacteria.all.Location)) + geom_boxplot()+ theme(legend.position = "none") + theme(text=element_text(size=20)) + labs(y = "Shannon-Weiner Diversity", x = "Treatment") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+diversiy.plot
+
+```
+
+```{r}
+genus <- diatoms %>% group_by(SampleID, kingdom, genus) %>% summarize(n = sum(n))%>% mutate(rel = n / sum(n))
+genus <- genus %>% dplyr::select(SampleID, genus, rel)
+genus[is.na(genus)] <- NA
+genus <- genus %>% pivot_wider(names_from = genus, values_from = rel)
+genus[c(2:211)] <- sapply(genus[c(2:211)],as.numeric)
+genus[is.na(genus)] <- 0
+
+genus <- as.data.frame(c(metadata, genus))
+genus.ggplot <- genus %>% group_by(Treatment, Location, plant, kingdom) %>% summarize_at(vars(g__acremonium:g__sclerotinia), mean)
+
+genus.ggplot <- pivot_longer(genus, cols = g__acremonium:g__sclerotinia, names_to = "genus", values_to = "count")
+
+genus.ggplot <- genus.ggplot %>% group_by(Treatment, genus, Location, plant, kingdom) %>% summarize(mean = mean(count))
+```
+
+```{r}
+ggplot(genus.ggplot %>% filter(kingdom == "k__eukaryota") , aes(fill = genus, y = mean, x = Treatment)) + geom_bar(position = "dodge", stat = "identity") + theme_bw() + theme(axis.text.x = element_text(size = 10)) + theme(legend.position = "right") + labs(y = "Relative Abundance")  +
+  theme(axis.text.x = element_text(
+    angle = 90,
+    vjust = .5,
+    hjust = 1
+  )) 
+
+```
+
+
+```{r}
+genus.anova <- genus.ggplot %>% group_by(genus) %>%
+  do(broom::tidy(TukeyHSD(aov(mean ~ plant, data = .)))) %>%
+  ungroup
+
+genus.anova.treatment <- genus.anova %>% filter(adj.p.value < 0.05)
+
+```

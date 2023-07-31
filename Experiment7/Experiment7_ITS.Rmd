@@ -1,0 +1,397 @@
+---
+title: "Water Lilies Floating and Buried ITS"
+author: "Brianne Palmer"
+date: "2023-02-01"
+output: html_document
+---
+
+#Note this was redone and NUBOTR1 and NYBOTR3 were switched in the excel sheet because the leaves were mis-identified (for 16S, 18S (euk) and ITS)
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/Users/briannepalmer/Library/CloudStorage/OneDrive-Personal/LeafFossilization/Leaf Fossilization Experiments_3_4_7_8/Experiment 7")
+```
+There are several packages required to perform these analyses and create the figures. There are probably easier ways to do some of this, but if the code works, why change it?
+```{r, Load Libraries}
+library(phyloseq)
+library(plyr)
+library(data.table)
+library(tidyverse)
+library(vegan)
+library(ecodist)
+library(patchwork)
+library(RColorBrewer)
+library(ape)
+library(microbiome)
+library(microbiomeMarker)
+library(ampvis2)
+library(ggpubr)
+library(ggvenn)
+library(indicspecies)
+library(ggpattern)
+library(rstatix)
+library(ggrepel)
+```
+
+Load Data
+```{r}
+ITS <- fread("/Users/briannepalmer/Library/CloudStorage/OneDrive-Personal/LeafFossilization/Dataframes_to_merge/experiment7_ITS.csv")
+```
+
+```{r}
+# the metadata 
+SampleID <- c("NuBotR1", "NuBotR2", "NuBotR3", "NuTopR1", "NuTopR2", "NuTopR3", "NyBotR1", "NyBotR2", "NyBotR3", "NyTopR1", "NyTopR2", "NyTopR3")
+Location <-c("buried", "buried", "buried", "floating", "floating", "floating", "buried", "buried", "buried", "floating", "floating", "floating")
+plant <- c("Nuphar", "Nuphar", "Nuphar", "Nuphar", "Nuphar", "Nuphar", "Nymphaea", "Nymphaea", "Nymphaea", "Nymphaea", "Nymphaea", "Nymphaea")
+treatment <- c("NuBot", "NuBot", "NuBot", "NuTop", "NuTop", "NuTop", "NyBot", "NyBot", "NyBot", "NyTop", "NyTop", "NyTop")
+
+metadata <- data.frame(SampleID, Location, plant, treatment)
+xITS <- seq(1:630)
+```
+
+```{r}
+ASV.ITS <- as.vector(paste0("ASV", xITS))
+ITS$ASV <- ASV.ITS
+```
+
+```{r}
+ITS[,c(2:13)] <-sweep(ITS[,c(2:13)], 2, colSums(ITS[,c(2:13)]), `/`)
+ITS$n <- rowSums(ITS[ , c(2:13)], na.rm=TRUE)
+```
+
+Make another table with the ASVs as columns, this is necessary for the PCOA
+
+```{r, PCOA for 16S}
+transformed.ITS <- t(ITS[,c(2:13)])
+colnames(transformed.ITS) <- ASV.ITS
+transformed.ITS[is.na(transformed.ITS)] <-0
+transformed.ITS[c(1:630)] <- sapply(transformed.ITS[c(1:630)],as.numeric)
+
+otu.bray.ITS <- vegdist(transformed.ITS, method = "bray")
+pcoaVS.ITS <- ecodist::pco(otu.bray.ITS, negvals = "zero", dround = 0)
+
+pcoa1.ITS = pcoaVS.ITS$vectors[,1] # adds the points of the NMDS 1 dimmension
+pcoa2.ITS = pcoaVS.ITS$vectors[,2] # adds the points of the NMDS 2 dimmension
+
+MDS = data.frame(pcoa1.ITS = pcoa1.ITS, pcoa2.ITS = pcoa2.ITS)
+MDS = cbind(MDS, metadata)
+
+set.seed(12345)
+adonis2(transformed.ITS ~ Location, metadata) # 0.048
+adonis2(transformed.ITS ~ plant, metadata)# 0.166
+```
+Time to make some plots, but first, I want to make a color scheme for all the future figures. Hopefully, it is color blind friendly 
+```{r}
+pal <- palette(c('#882255','#88CCEE','#EE8866','#44AA99','#117733','#332288','#DDCC77','#999933','#CC6677','#AA4499','#DDDDDD'))
+largepal <- colorRampPalette(pal)(50) # for large number of variables
+two.pal <- palette(c('#882255','#88CCEE'))
+```
+
+```{r, echo=FALSE}
+pdf("figures/WaterLilyTopBottom_PCOA_ITS.pdf", height = 12, width = 12)
+ggplot(MDS, aes(x = pcoa1.ITS, y = pcoa2.ITS, color = treatment, shape = plant)) + geom_point(size =3) + scale_color_manual(values = pal) + theme_bw() + theme(text=element_text(size=20)) + labs(x = "PCOA1", y = "PCOA2") + geom_polygon(aes(group = treatment, fill = treatment), alpha = 0.5)+ scale_fill_manual(values = pal) + geom_label_repel(aes(label = SampleID), max.overlaps = 10, size = 3, label.padding = 0.1) + ylim(-0.7, 1.1) + xlim(-0.7, 1.1)
+dev.off()
+```
+
+Is there a difference between the plants only in the buried treatments 
+
+```{r}
+ITSmerged <- transformed.ITS
+ITSmerged <- as.data.frame(ITSmerged)
+ITSmerged$SampleID <- c("NuBotR1", "NuBotR2", "NuBotR3", "NuTopR1", "NuTopR2", "NuTopR3", "NyBotR1", "NyBotR2", "NyBotR3", "NyTopR1", "NyTopR2", "NyTopR3")
+ITSmerged$Location <- Location
+ITSmerged$plant <- plant
+
+ITSburied <- ITSmerged %>% filter(Location == "buried")
+ITSburied <- ITSburied[, colSums(ITSburied != 0) > 0]
+
+ITSfloating <- ITSmerged %>% filter(Location == "floating")
+ITSfloating <- ITSfloating[, colSums(ITSfloating != 0) > 0]
+
+set.seed(12345)
+adonis2(ITSburied[,c(1:490)] ~ plant, ITSburied) # 0.4
+adonis2(ITSfloating[,c(1:378)] ~ plant, ITSfloating) # 0.2
+
+```
+
+Look at the abundance of each phylum and make bar charts for the phyla within each kingdom 
+
+For this, we have to make another table, I am calling it pivot here but it is a transposed table essentially 
+```{r, 16S}
+# remove ASVs that have no information 
+pivot.ITS <- ITS %>% filter(kingdom != "Unassigned", kingdom != "Alveolata") %>% pivot_longer(cols = c(NuBotR1:NyTopR3), names_to = "SampleID")
+
+# if there are blanks, these should be NA
+pivot.ITS[pivot.ITS == ""] <- NA   
+
+pivot.ITS <- pivot.ITS %>% group_by(SampleID, kingdom, phylum, class, order, family, genus, species, ASV) %>% dplyr::summarize(value = sum(value))
+
+phylum.ITS <- pivot.ITS %>% dplyr::select(SampleID, kingdom, phylum, value) %>% group_by(SampleID, kingdom, phylum) %>% dplyr::summarize(value = sum(value))
+
+phylum.ITS <- phylum.ITS %>% pivot_wider(names_from = phylum, values_from = value)
+
+phylum.ITS[c(3:7)] <- sapply(phylum.ITS[c(3:7)],as.numeric)
+phylum.ITS[is.na(phylum.ITS)] <- 0
+
+phylum.ITS <- merge(metadata, phylum.ITS, by = "SampleID")
+
+# make a longer table, this is easier to graph with (hence why I named it ggplot)
+phylum.ggplot.ITS <- pivot_longer(phylum.ITS, cols = p__Dinophyta:`NA`,names_to = "phylum", values_to = "value")
+
+```
+
+```{r}
+pdf("figures/WaterLiliesTopBottom_PhylumBarPlot_ITS.pdf", height = 12, width = 18)
+ggplot(
+    phylum.ggplot.ITS %>% filter(value > 0, phylum != "NA"),
+    aes(fill = phylum, y = value, x = treatment)
+  ) + geom_bar(position = "dodge", stat = "identity") + theme(legend.position = "right") + labs(y = "Absolute Abundance") + theme_bw() + scale_fill_manual(values = pal) + theme(text=element_text(size=20), legend.position = "right", legend.direction = "vertical")
+dev.off()
+```
+```{r}
+phylum.anova <- phylum.ggplot.ITS %>% group_by(phylum) %>%
+  do(broom::tidy(TukeyHSD(aov(value ~ Location, data = .)))) %>%
+  ungroup
+
+phylum.anova.sig <- phylum.anova %>% filter(adj.p.value < 0.05) 
+
+phylum.anova.sig 
+```
+
+```{r}
+ITS2 <- fread("/Users/briannepalmer/Library/CloudStorage/OneDrive-Personal/LeafFossilization/Dataframes_to_merge/experiment7_ITS.csv")
+ITS2$ASV <- ASV.ITS
+
+otu.table <- ITS2[,c(2:13)]
+otu.table <- as.matrix(otu.table)
+rownames(otu.table) <- ITS2$ASV
+tax.table <- ITS2[,c(14:20)]
+tax.table <- as.matrix(tax.table)
+rownames(tax.table) <- ITS2$ASV
+
+otu.table <- otu_table(otu.table, taxa_are_rows = TRUE)
+tax.table <- tax_table(tax.table)
+sam.data <- as.matrix(metadata)
+sam.data <- sample_data(metadata)
+rownames(sam.data) <- metadata$SampleID
+
+ps <- phyloseq(otu.table, tax.table, sam.data)
+random_tree = rtree(ntaxa(ps), rooted=TRUE, tip.label=taxa_names(ps))
+
+ps = merge_phyloseq(ps,random_tree)
+ps <- subset_taxa(ps, kingdom !="Unassigned")
+ps <- subset_taxa(ps, phylum != "NA")
+
+p = plot_richness(ps, x="Location", color ="Location", measures=c("Observed","Shannon", "Simpson")) + geom_point() + theme_bw() + geom_violin() + scale_fill_manual(values = two.pal)
+p
+```
+
+
+Make a new dataframe with the ASVs from the pivot dataframe
+```{r}
+ASV <- pivot.ITS %>% dplyr::select(SampleID, ASV, value) # the pivot dataframe also removed all the ASVs that were unassigned at the kingdom level 
+ASV <- ASV %>% pivot_wider(names_from = ASV, values_from = value)
+ASV[c(9:551)] <- sapply(ASV[c(9:551)],as.numeric)
+ASV[c(9:551)][is.na(ASV[c(9:551)])] <- 0
+ASV <- merge(metadata, ASV)
+ASV.gp <- ASV %>% group_by(SampleID, Location, plant, treatment) %>% summarize_at(vars(ASV530:ASV98), sum)
+
+```
+
+```{r}
+ASV.long <- pivot_longer(ASV.gp, cols = ASV530:ASV98, names_to = "ASV", values_to = "count")
+
+y <- ASV.long %>% dplyr::select(treatment, ASV, count)
+
+NuBot = y %>% filter(treatment == "NuBot")  %>% filter(count >0) %>% dplyr::select(ASV) #451
+NuTop = y %>% filter(treatment == "NuTop")  %>% filter(count >0) %>% dplyr::select(ASV) #427
+NyBot = y %>% filter(treatment == "NyBot")  %>% filter(count >0) %>% dplyr::select(ASV) #507
+NyTop = y %>% filter(treatment == "NyTop")  %>% filter(count >0) %>% dplyr::select(ASV) #448
+
+
+y <- rbind(NuBot, NuTop, NyBot, NyTop)
+
+Treatment <- c(rep("Nu.Buried", 451), rep("Nu.Floating", 427), rep("Ny.Buried", 507), rep("Ny.Floating", 448))
+
+y$Treatment <- Treatment
+
+x <- list(Nu.Buried = y$ASV[1:451], Nu.Floating = y$ASV[452:878], Ny.Buried = y$ASV[879:1385], Ny.Floating = y$ASV[1386:1833])
+
+```
+
+```{r, echo=FALSE}
+venn <- ggvenn(
+  x, 
+  fill_color = pal,
+  stroke_size = 0.5, set_name_size = 8, show_percentage = TRUE) + theme(text = element_text(size = 20))
+
+pdf("figures/WaterLiliesTopBottom_VennDiagram_ITS.pdf", width = 20, height = 20)
+venn
+dev.off()
+```
+
+```{r}
+otu.table <- as.data.frame(ps@otu_table)
+tax.table <- as.data.frame(ps@tax_table)
+
+d <- amp_load(otutable = otu.table,
+              metadata = metadata,
+              taxonomy = tax.table)
+
+amp_rank_abundance(d, "Location", showSD = TRUE, log10_x = TRUE)
+
+amp_rarecurve(
+  d,
+  stepsize = 1000,
+  color_by = "SampleID",
+  facet_by = NULL,
+  facet_scales = "fixed"
+)
+
+amp_octave(
+  d,
+  tax_aggregate = "OTU",
+  group_by = 1L,
+  scales = "fixed",
+  num_threads = parallel::detectCores() - 2L
+)
+
+d.rare <-amp_rarefy(d, 15606)
+
+pdf("figures/WaterLiliesTopBottom_HeatmapITS.pdf", width = 14, height = 20)
+amp_heatmap(data = d.rare, 
+             tax_aggregate = "Genus",
+             tax_add = "Phylum",
+             group_by = c("SampleID"),
+             tax_show = 25,
+             plot_colorscale = "log10",
+            facet_by = "treatment",
+            color_vector = NULL)
+dev.off()
+
+
+alpha <- amp_alpha_diversity(d.rare)
+
+rich.lm <- lm(ObservedOTUs ~ Location, data = alpha)
+rich.aov <- aov(rich.lm)
+summary(rich.aov)
+
+rich.lm <- lm(ObservedOTUs ~ plant, data = alpha)
+
+rich.aov <- aov(rich.lm)
+summary(rich.aov)
+
+div.lm <- lm(Shannon ~ Location, data = alpha)
+div.aov <- aov(div.lm)
+summary(div.aov)
+
+div.lm <- lm(Shannon ~ plant, data = alpha)
+div.aov <- aov(div.lm)
+summary(div.aov)
+
+div.lm <- lm(Simpson ~ Location, data = alpha)
+div.aov <- aov(div.lm)
+summary(div.aov)
+
+div.lm <- lm(invSimpson ~ Location, data = alpha)
+div.aov <- aov(div.lm)
+summary(div.aov)
+
+
+amp_otu_network(
+  d,
+  min_abundance = 0,
+  color_by = "treatment",
+  tax_aggregate = "Phylum",
+  tax_add = NULL,
+  tax_show = 10,
+  tax_class = NULL,
+  tax_empty = "best",
+  normalise = TRUE
+)
+
+
+amp_venn(
+  d.rare,
+  group_by = "Location",
+  cut_a = 0.1,
+  cut_f = 80,
+  text_size = 5,
+  normalise = TRUE,
+  detailed_output = FALSE
+)
+
+
+```
+
+Look at richness and diversity between all samples
+```{r}
+library(ggpattern)
+ggplot(data = alpha, aes(x = SampleID, y = ObservedOTUs, color = Location, shape = plant)) + geom_point(size = 5) + theme_bw() + theme(legend.position = "none")  + labs(y = "# of ASV", x = "Location") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + theme_bw() + scale_color_manual(values = two.pal) + theme(text=element_text(size=20)) + theme (axis.text.x = element_text (angle = 45, vjust = 1, hjust=1)) 
+```
+
+```{r}
+nubot.rich.plot <- ggplot(data = alpha %>% filter(treatment == "NuBot"), aes(x = SampleID, y = ObservedOTUs, color = Location, shape = plant)) + geom_point(size = 5) + theme_bw() + labs(y = "# of ASV", x = "Location") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + theme_bw() + scale_color_manual(values = '#882255') + theme(text=element_text(size=20)) + theme (axis.text.x = element_text (angle = 45, vjust = 1, hjust=1)) + ylim(0,200)+ theme(legend.position = "none") 
+
+nutop.rich.plot <- ggplot(data = alpha %>% filter(treatment == "NuTop"), aes(x = SampleID, y = ObservedOTUs, color = Location, shape = plant)) + geom_point(size = 5) + theme_bw()+ labs(y = "# of ASV", x = "Location") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + theme_bw() + scale_color_manual(values = '#88CCEE') + theme(text=element_text(size=20)) + theme (axis.text.x = element_text (angle = 45, vjust = 1, hjust=1)) + ylim(0,200)+ theme(legend.position = "none") 
+
+nybot.rich.plot <- ggplot(data = alpha %>% filter(treatment == "NyBot"), aes(x = SampleID, y = ObservedOTUs, color = Location, shape = plant)) + geom_point(size = 5) + theme_bw() + labs(y = "# of ASV", x = "Location") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + theme_bw() + scale_color_manual(values = '#EE8866') + theme(text=element_text(size=20)) + theme (axis.text.x = element_text (angle = 45, vjust = 1, hjust=1)) + ylim(0,200)+ theme(legend.position = "none") 
+
+nytop.rich.plot <- ggplot(data = alpha %>% filter(treatment == "NyTop"), aes(x = SampleID, y = ObservedOTUs, color = Location, shape = plant)) + geom_point(size = 5) + theme_bw() + labs(y = "# of ASV", x = "Location") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + theme_bw() + scale_color_manual(values = '#44AA99') + theme(text=element_text(size=20)) + theme (axis.text.x = element_text (angle = 45, vjust = 1, hjust=1)) + ylim(0,200)+ theme(legend.position = "none") 
+
+pdf("figures/WaterLiliesTopBottom_Richness_ITS.pdf", width = 14)
+nubot.rich.plot + nutop.rich.plot + nybot.rich.plot + nytop.rich.plot + plot_layout(ncol = 4, nrow = 1)
+dev.off()
+```
+
+```{r}
+ggplot(data = alpha, aes(x = Location, y = ObservedOTUs, fill = Location)) + geom_violin() + theme_bw() + theme(legend.position = "none")  + labs(y = "# of ASV", x = "Location") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + theme_bw() + scale_fill_manual(values = two.pal) + theme(text=element_text(size=20)) + theme (axis.text.x = element_text (angle = 45, vjust = 1, hjust=1))  
+
+ggplot(data = alpha, aes(x = Location, y = Shannon, fill = Location)) + geom_violin() + theme_bw() + theme(legend.position = "none")  + labs(y = "Shannon Diversity", x = "Location") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + theme_bw() + scale_fill_manual(values = two.pal) + theme(text=element_text(size=20)) + theme (axis.text.x = element_text (angle = 45, vjust = 1, hjust=1))  
+
+ggplot(data = alpha, aes(x = plant, y = Shannon, fill = plant)) + geom_violin() + theme_bw() + theme(legend.position = "none")  + labs(y = "Shannon Diversity", x = "Location") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + theme_bw() + scale_fill_manual(values = c('#332288','#DDCC77')) + theme(text=element_text(size=20)) + theme (axis.text.x = element_text (angle = 45, vjust = 1, hjust=1))  
+```
+
+```{r}
+nubot.div.plot <- ggplot(data = alpha %>% filter(treatment == "NuBot"), aes(x = SampleID, y = Shannon, color = Location, shape = plant)) + geom_point(size = 5) + theme_bw() + labs(y = "Shannon Diversity", x = "Location") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + theme_bw() + scale_color_manual(values = '#882255') + theme(text=element_text(size=20)) + theme (axis.text.x = element_text (angle = 45, vjust = 1, hjust=1)) + theme(legend.position = "none") + ylim(0,4.0)
+
+nutop.div.plot <- ggplot(data = alpha %>% filter(treatment == "NuTop"), aes(x = SampleID, y = Shannon, color = Location, shape = plant)) + geom_point(size = 5) + theme_bw()+ labs(y = "Shannon Diversity", x = "Location") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + theme_bw() + scale_color_manual(values = '#88CCEE') + theme(text=element_text(size=20)) + theme (axis.text.x = element_text (angle = 45, vjust = 1, hjust=1)) + theme(legend.position = "none") + ylim(0,4.0)
+
+nybot.div.plot <- ggplot(data = alpha %>% filter(treatment == "NyBot"), aes(x = SampleID, y = Shannon, color = Location, shape = plant)) + geom_point(size = 5) + theme_bw() + labs(y = "Shannon Diversity", x = "Location") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + theme_bw() + scale_color_manual(values = '#EE8866') + theme(text=element_text(size=20)) + theme (axis.text.x = element_text (angle = 45, vjust = 1, hjust=1)) + theme(legend.position = "none") + ylim(0,4.0)
+
+nytop.div.plot <- ggplot(data = alpha %>% filter(treatment == "NyTop"), aes(x = SampleID, y = Shannon, color = Location, shape = plant)) + geom_point(size = 5) + theme_bw() + labs(y = "Shannon Diversity", x = "Location") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + theme_bw() + scale_color_manual(values = '#44AA99') + theme(text=element_text(size=20)) + theme (axis.text.x = element_text (angle = 45, vjust = 1, hjust=1)) + theme(legend.position = "none") + ylim(0,4.0)
+
+pdf("figures/WaterLiliesTopBottom_ShannonDiversity_ITS.pdf", width = 14)
+nubot.div.plot + nutop.div.plot + nybot.div.plot + nytop.div.plot + plot_layout(ncol = 4, nrow = 1)
+dev.off()
+```
+
+```{r}
+ggplot(data = alpha, aes(x = treatment, y = ObservedOTUs, fill = Location)) + geom_violin() + theme_bw() + theme(legend.position = "none")  + labs(y = "# of ASV", x = "Location") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + theme_bw() + scale_fill_manual(values = two.pal) + theme(text=element_text(size=20)) + theme (axis.text.x = element_text (angle = 45, vjust = 1, hjust=1)) +
+  geom_violin_pattern(color = "gray", 
+                   pattern_fill = "gray",
+                   pattern_angle = 45,
+                   pattern_density = 0.1,
+                   pattern_spacing = 0.025,
+                   pattern_key_scale_factor = 0.6)
+```
+
+```{r}
+nubot.rich.plot <- ggplot(data = alpha %>% filter(treatment == "NuBot"), aes(x = SampleID, y = ObservedOTUs, color = Location, shape = plant)) + geom_point(size = 5) + theme_bw() + labs(y = "# of ASV", x = "Location") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + theme_bw() + scale_color_manual(values = '#882255') + theme(text=element_text(size=20)) + theme (axis.text.x = element_text (angle = 45, vjust = 1, hjust=1)) + ylim(0,1600)+ theme(legend.position = "none") 
+
+nutop.rich.plot <- ggplot(data = alpha %>% filter(treatment == "NuTop"), aes(x = SampleID, y = ObservedOTUs, color = Location, shape = plant)) + geom_point(size = 5) + theme_bw()+ labs(y = "# of ASV", x = "Location") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + theme_bw() + scale_color_manual(values = '#88CCEE') + theme(text=element_text(size=20)) + theme (axis.text.x = element_text (angle = 45, vjust = 1, hjust=1)) + ylim(0,1600)+ theme(legend.position = "none") 
+
+nybot.rich.plot <- ggplot(data = alpha %>% filter(treatment == "NyBot"), aes(x = SampleID, y = ObservedOTUs, color = Location, shape = plant)) + geom_point(size = 5) + theme_bw() + labs(y = "# of ASV", x = "Location") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + theme_bw() + scale_color_manual(values = '#882255') + theme(text=element_text(size=20)) + theme (axis.text.x = element_text (angle = 45, vjust = 1, hjust=1)) + ylim(0,1600)+ theme(legend.position = "none") 
+
+nytop.rich.plot <- ggplot(data = alpha %>% filter(treatment == "NyTop"), aes(x = SampleID, y = ObservedOTUs, color = Location, shape = plant)) + geom_point(size = 5) + theme_bw() + labs(y = "# of ASV", x = "Location") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + theme_bw() + scale_color_manual(values = '#88CCEE') + theme(text=element_text(size=20)) + theme (axis.text.x = element_text (angle = 45, vjust = 1, hjust=1)) + ylim(0,1600)+ theme(legend.position = "none") 
+
+nubot.rich.plot + nutop.rich.plot + nybot.rich.plot + nytop.rich.plot + plot_layout(ncol = 4, nrow = 1)
+```
+
+```{r}
+ggplot(data = alpha, aes(x = SampleID, y = Shannon, color = Location, shape = plant)) + geom_point(size = 5) + theme_bw() + theme(legend.position = "none")  + labs(y = "Shannon Diversity", x = "Location") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + theme_bw() + scale_color_manual(values = two.pal) + theme(text=element_text(size=20)) + theme (axis.text.x = element_text (angle = 45, vjust = 1, hjust=1)) 
+
+ggplot(data = alpha, aes(x = treatment, y = Shannon, fill = Location)) + geom_violin() + theme_bw() + theme(legend.position = "none")  + labs(y = "Shannon Diversity", x = "Location") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + theme_bw() + scale_fill_manual(values = two.pal) + theme(text=element_text(size=20)) + theme (axis.text.x = element_text (angle = 45, vjust = 1, hjust=1)) 
+```
+
+

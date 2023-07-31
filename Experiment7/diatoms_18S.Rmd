@@ -1,0 +1,107 @@
+---
+title: "Experiment 7 Bacteria"
+author: "Brianne"
+date: "15.11.2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/Users/briannepalmer/Library/CloudStorage/OneDrive-Personal/Leaf Fossilization Experiment 7/Experiment 7")
+```
+
+required Libraries
+
+```{r}
+library(ecodist)
+library(tidyverse)
+library(vegan)
+library(data.table)
+```
+
+Load bacteria OTU data and create a new column for relative abundance, use relative abundance values throughout
+
+```{r}
+diatoms <- fread("/Users/briannepalmer/Downloads/NymphaeaNuphar 18S Analysis MrDNA/analysisfiles/100722BP1SSU-zotus.fa.mapping.txt")
+
+diatoms.fix  <- separate(data = diatoms, col = V3, into = c("sp", "kingdom", "phylum", "class", "order", "family", "genus", "species", "superkingdom", "subphylum"), sep = ";")
+
+diatoms.fix  <- separate(data = diatoms.fix, col = V1, into = c("SampleID", "n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8", "n9", "n10"), sep = ":")
+
+diatoms <- diatoms.fix %>% dplyr::select(SampleID, V2, kingdom, phylum, class, order, family, genus)
+
+
+fwrite(diatoms, file = "waterlilies_.txt")
+#fwrite(experiment7, file = "experiment7.txt")
+
+
+diatoms <- diatoms  %>% dplyr::rename(OTU = V2)
+diatoms <- diatoms %>%  add_count(OTU) %>% filter(kingdom == "k__eukaryota")
+diatoms.gp <- diatoms %>% group_by(SampleID, OTU) %>% summarize(n = sum(n))  
+diatoms.gp <- diatoms.gp %>% mutate(rel = n / sum(n)) 
+
+#Load metadata file
+SampleID <- unique(diatoms$SampleID)
+plant <- c("nuphar", "nuphar", "nuphar", "nuphar", "nuphar", "nuphar", "nymphaea", "nymphaea", "nymphaea", "nymphaea", "nymphaea", "nymphaea")
+Location <- c("Bottom", "Bottom", "Bottom", "Top", "Top", "Top", "Bottom", "Bottom", "Bottom", "Top", "Top", "Top")
+Replicate <- c("R1", "R2", "R3","R1", "R2", "R3","R1", "R2", "R3","R1", "R2", "R3")
+Treatment <-c("nuphar_bottom", "nuphar_bottom", "nuphar_bottom", "nuphar_top", "nuphar_top", "nuphar_top", "nymphaea_bottom", "nymphaea_bottom", "nymphaea_bottom", "nymphaea_top", "nymphaea_top", "nymphaea_top")
+
+metadata <- data.frame(SampleID, Treatment, plant, Replicate, Location)
+
+```
+
+Transpose the 'bacteria' file so the OTUs are columns, make all OTU values numeric and make NAs = 0. Then group by SampleID to get 30 lines and create a new file with the OTU values only
+
+```{r}
+diatoms.t <- diatoms.gp %>% pivot_wider(names_from =OTU, values_from = rel)
+diatoms.t[c(3:212)] <- sapply(diatoms.t[c(3:212)],as.numeric)
+diatoms.t[c(3:212)][is.na(diatoms.t[c(3:212)])] <-0
+diatoms.t <- diatoms.t %>% group_by(SampleID) %>% summarize_all(sum)
+otu.only <- diatoms.t[3:212]
+```
+
+make bray-curtis matrix
+
+```{r}
+otu.bray <- vegdist(otu.only, method = "bray")# dissimilarity matrix using bray-curtis distance indices
+```
+
+Calculate PCoA values
+
+```{r}
+pcoaVS <- pco(otu.bray, negvals = "zero", dround = 0) # if negvals = 0 sets all negative eigenvalues to zero
+```
+
+Make dataframe for plot with vectors and metadata
+
+```{r}
+pcoa1 = pcoaVS$vectors[,1] # adds the points of the NMDS 1 dimmension
+pcoa2 = pcoaVS$vectors[,2] # adds the points of the NMDS 2 dimmension
+
+MDS = data.frame(pcoa1 = pcoa1, pcoa2 = pcoa2)
+MDS = cbind(MDS, metadata)
+
+```
+
+Make plot
+
+```{r}
+set.seed(12345)
+
+ggplot(MDS, aes(x = pcoa1, y = pcoa2, color = Location, shape = plant)) + geom_point(size =3) + 
+  theme_bw()
+```
+
+Look for statistial differences in community composition using a PERMANOVA (adonis function in 'vegan')
+
+```{r}
+set.seed(12345)
+adonis2(otu.only ~ Treatment, metadata) # 0.02 (for eukaryotes)
+adonis2(otu.only ~ plant, metadata) # 0.024 (for eukaryotes)
+adonis2(otu.only ~ Location, metadata) # 0.047 (for eukaryotes)
+
+```
+
+When we have multiple comparisons, adonis doesn't tell us which groups are different from each other so we can use a pairwise PERMANOVA. Since we are comparing muliple groups, we need to look at the adjusted p-value to determine significance.
+

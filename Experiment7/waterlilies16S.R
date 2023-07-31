@@ -1,0 +1,183 @@
+library(data.table)
+library(tidyverse)
+library(plyr)
+
+#count.16 <-read.delim("/Users/briannepalmer/Library/CloudStorage/OneDrive-Personal/LeafFossilization/Dataframes_to_merge/feature-table_16S.tsv", header=FALSE, row.names=NULL, stringsAsFactors=FALSE, na.strings = "n/a")
+
+count.16.sw <- read.delim("/Users/briannepalmer/Library/CloudStorage/OneDrive-Personal/LeafFossilization/PondWater_PondSoil_GinkgoAquarium_16S/demux/Brianne_SoilWater/ASVs/feature-table.tsv", , header=FALSE, row.names=NULL, stringsAsFactors=FALSE, na.strings = "n/a")
+
+
+#colnames(count.16)<-as.character(unlist(count.16[2,]))
+#count.16<-count.16[-c(1,2),]
+#colnames(count.16)[1]<-"Feature.ID"
+#head(count.16[1:2,]) # check dataframe structure
+#x<-dim(count.16)[2];x # number of columns
+# Convert class in count1 to numerics
+#count.16<-count.16
+#x<-dim(count.16)[2];x # number of columns
+#count.16[2:x] <- lapply(count.16[2:x], function(x) as.numeric(as.character(x)))
+
+
+colnames(count.16.sw)<-as.character(unlist(count.16.sw[2,]))
+count.16.sw<-count.16.sw[-c(1,2),]
+colnames(count.16.sw)[1]<-"Feature.ID"
+head(count.16.sw[1:2,]) # check dataframe structure
+x<-dim(count.16.sw)[2];x # number of columns
+# Convert class in count1 to numerics
+count.16.sw<-count.16.sw
+x<-dim(count.16.sw)[2];x # number of columns
+count.16.sw[2:x] <- lapply(count.16.sw[2:x], function(x) as.numeric(as.character(x)))
+
+
+#seq_total<-apply(count.16[2:x],2,sum) #number of sequences per sample
+#OTU_count<-colSums(count.16[2:x]>0) # OTUs per sample
+#OTU_single<-colSums(count.16[2:x]==1) # OTUs with only 1 seq
+#OTU_double<-colSums(count.16[2:x]==2) # OTUs that have only 2 seqs
+#OTU_true<-colSums(count.16[2:x]>2) # Number of OTUs with >2 seqs
+#dataset_info<-data.frame(seq_total,OTU_count,OTU_single,OTU_double,OTU_true)
+
+seq_total<-apply(count.16.sw[2:x],2,sum) #number of sequences per sample
+OTU_count<-colSums(count.16.sw[2:x]>0) # OTUs per sample
+OTU_single<-colSums(count.16.sw[2:x]==1) # OTUs with only 1 seq
+OTU_double<-colSums(count.16.sw[2:x]==2) # OTUs that have only 2 seqs
+OTU_true<-colSums(count.16.sw[2:x]>2) # Number of OTUs with >2 seqs
+dataset_info.sw<-data.frame(seq_total,OTU_count,OTU_single,OTU_double,OTU_true)
+
+
+# Totals for whole dataset:
+sum(seq_total) # total number of sequences over whole dataset
+dim(count.16.sw)[1] # total unique OTUs over whole dataset
+
+# Option to remove global singletons
+#rowsum<-apply(count.16[2:x],1,sum) # Number of sequences per OTU (for whole dataset)
+#count.no1 = count.16[ rowsum>1, ] # Remove rowsums =< 1 (only one sequence for 1 OTU)
+#dim(count.16)[1] - dim(count.no1)[1] # Total number of global singletons removed from data
+## Switch values above to remove global doubletons as well!
+
+
+rowsum<-apply(count.16.sw[2:x],1,sum) # Number of sequences per OTU (for whole dataset)
+count.no1.sw = count.16.sw[ rowsum>1, ] # Remove rowsums =< 1 (only one sequence for 1 OTU)
+dim(count.16.sw)[1] - dim(count.no1.sw)[1] # Total number of global singletons removed from data
+## Switch values above to remove global doubletons as well!
+
+# Import taxonomy file and join with count data:
+library(tidyverse)
+#taxname.16 <-read.delim("/Users/briannepalmer/Library/CloudStorage/OneDrive-Personal/LeafFossilization/Dataframes_to_merge/taxonomy_16S.tsv", header=TRUE, row.names=NULL)
+#taxname.16 <- taxname.16 %>% dplyr::rename(Consensus = Confidence)
+
+#taxname.16 <- separate(data = taxname.16, col = Taxon, into = c("kingdom", "phylum", "class", "order", "family", "genus", "species"), sep = ";")
+
+taxname.16.sw <-read.delim("/Users/briannepalmer/Library/CloudStorage/OneDrive-Personal/LeafFossilization/PondWater_PondSoil_GinkgoAquarium_16S/demux/Brianne_SoilWater/tax_dir/taxonomy.tsv", header=TRUE, row.names=NULL)
+taxname.16.sw <- taxname.16.sw %>% dplyr::rename(Consensus = Confidence)
+
+taxname.16.sw <- separate(data = taxname.16.sw, col = Taxon, into = c("kingdom", "phylum", "class", "order", "family", "genus", "species"), sep = ";")
+
+#counts_wtax <-join(count.no1, taxname.16, by="Feature.ID", type="left", match="first")
+
+counts_wtax.sw <-join(count.no1.sw, taxname.16.sw, by="Feature.ID", type="left", match="first")
+# save as excel and then remove __ in excel because it is easier, in excel, I laso had to find all the bacteria_x, archae_x, and terrabacteria and move the columns so the phylums matched with the others and had to change phyla so they mtches (i.e. actinobacteria and actinobacteriota)
+
+
+#fwrite(counts_wtax,file = "/Users/briannepalmer/Library/CloudStorage/OneDrive-Personal/LeafFossilization/Dataframes_to_merge/experiment7_16S.csv")
+
+fwrite(counts_wtax.sw,file = "/Users/briannepalmer/Library/CloudStorage/OneDrive-Personal/LeafFossilization/Dataframes_to_merge/experiment7_16S_sw.csv")
+ ##################################################################
+####################################################################
+
+counts_wtax <- fread("/Users/briannepalmer/Library/CloudStorage/OneDrive-Personal/LeafFossilization /Dataframes_to_merge/experiment7_16S.csv")
+
+metadata<-fread("/Users/briannepalmer/Library/CloudStorage/OneDrive-Personal/LeafFossilization /NymphaeaNuphar_18S/sample-metadata.tsv")
+metadata$Location <-c("bottom", "bottom", "bottom", "top", "top", "top", "bottom", "bottom", "bottom", "top", "top", "top")
+metadata$plant <- c("Nuphar", "Nuphar", "Nuphar", "Nuphar", "Nuphar", "Nuphar", "Nymphaea", "Nymphaea", "Nymphaea", "Nymphaea", "Nymphaea", "Nymphaea")
+
+x <- seq(1:3997)
+otu.names <- as.vector(paste0("ASV", x))
+counts_wtax$otu <- otu.names
+
+tax.only <- counts_wtax[,c(1, 14:20)]
+count.only <- counts_wtax[,c(2:13)]
+
+otu.table <- counts_wtax[,c(22, 2:13)]
+otu.table <- otu.table[,-1]
+otu.table <- as.matrix(otu.table)
+rownames(otu.table) <- counts_wtax$otu
+
+tax.table <- counts_wtax[,c(22,14:20)]
+tax.table <- as.matrix(tax.table)
+rownames(tax.table) <- counts_wtax$otu
+tax.table <- tax.table[,-1]
+
+# make OTUs columns 
+transformed <- t(count.only)
+colnames(transformed) <- tax.only$Feature.ID
+transformed[is.na(transformed)] <-0
+transformed[c(1:3997)] <- sapply(transformed[c(1:3997)],as.numeric)
+transformed <- as.matrix(transformed)
+transformed <- matrix(
+  as.numeric(transformed), ncol = 3997) 
+
+# make otu plot 
+library(vegan)
+otu.bray <- vegdist(transformed, method = "bray")
+
+library(ecodist)
+pcoaVS <- pco(otu.bray, negvals = "zero", dround = 0) # if negvals = 0 sets all negative eigenvalues to zero
+
+# Make dataframe for plot with vectors and metadata
+
+pcoa1 = pcoaVS$vectors[,1] # adds the points of the NMDS 1 dimmension
+pcoa2 = pcoaVS$vectors[,2] # adds the points of the NMDS 2 dimmension
+
+MDS = data.frame(pcoa1 = pcoa1, pcoa2 = pcoa2)
+MDS = cbind(MDS, metadata)
+
+set.seed(12345)
+ggplot(MDS, aes(x = pcoa1, y = pcoa2, color = Location, shape = plant)) + geom_point(size =3) + 
+  theme_bw()
+
+adonis2(transformed ~ Location, metadata) # 0.024
+adonis2(transformed ~ plant, metadata) # 0.61
+
+library(ampvis2)
+
+d <- amp_load(otutable = otu.table,
+              metadata = metadata,
+              taxonomy = tax.table)
+
+amp_heatmap(data = d, 
+            group = "Location",
+            tax_show = 25,
+            tax_aggregate = "Class",
+            plot_colorscale = "log10",
+            plot_na = TRUE)
+
+
+amp_heatmap (data = d, 
+             tax_aggregate = "Family",
+             group_by = c("Location", "plant"),
+             tax_show = 25,
+             plot_colorscale = "log10")
+
+amp_heatmap(d,
+            group_by = "Location",
+            facet_by = "plant",
+            tax_aggregate = "Genus",
+            tax_add = "Phylum",
+            tax_show = 20,
+            color_vector = c("white", "darkred"),
+            plot_colorscale = "sqrt",
+            plot_values = FALSE) +
+  theme(axis.text.x = element_text(angle = 45, size=12, vjust = 1),
+        axis.text.y = element_text(size=12),
+        legend.position="right")
+
+
+
+amp_heatmap(d,
+            group_by = c("Location"),
+            tax_aggregate = "Genus",
+            plot_functions = TRUE,
+            tax_show = 25,
+            functions = c("Filamentous", "Chemoautotroph_mixotroph", "AOB", "NOB", "Aerobic heterotroph", "Nitrite reduction", "Sulfate reduction", "Fermentation", "Acetogen", "Short-chain fatty acids", "Sugars", "Proteins_amino acids"))
+
+

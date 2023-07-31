@@ -1,0 +1,19 @@
+SampleID,Description,Plant ,Location ,Treatment ,Type,Replicate
+NuBotR1,NuBotR1,Nuphar,Sunken,Nuphar_Sunken,Plant,R1
+NuBotR2,NuBotR2,Nuphar,Sunken,Nuphar_Sunken,Plant,R2
+NuBotR3,NuBotR3,Nuphar,Sunken,Nuphar_Sunken,Plant,R3
+NuTopR1,NuTopR1,Nuphar,Floating,Nuphar_Floating,Plant,R1
+NuTopR2,NuTopR2,Nuphar,Floating,Nuphar_Floating,Plant,R2
+NuTopR3,NuTopR3,Nuphar,Floating,Nuphar_Floating,Plant,R3
+NyBotR1,NyBotR1,Nymphaea,Sunken,Nymphaea_Sunken,Plant,R1
+NyBotR2,NyBotR2,Nymphaea,Sunken,Nymphaea_Sunken,Plant,R2
+NyBotR3,NyBotR3,Nymphaea,Sunken,Nymphaea_Sunken,Plant,R3
+NyTopR1,NyTopR1,Nymphaea,Floating,Nymphaea_Floating,Plant,R1
+NyTopR2,NyTopR2,Nymphaea,Floating,Nymphaea_Floating,Plant,R2
+NyTopR3,NyTopR3,Nymphaea,Floating,Nymphaea_Floating,Plant,R3
+BS1,Soil1,None,Soil,Soil,Soil,R1
+BS2,Soil2,None,Soil,Soil,Soil,R2
+BS3,Soil3,None,Soil,Soil ,Soil ,R3
+BW1,Water1,None,Water,Water,Water,R1
+BW2,Water2,None ,Water,Water,Water,R2
+BW3,Water3,None ,Water,Water,Water,R3

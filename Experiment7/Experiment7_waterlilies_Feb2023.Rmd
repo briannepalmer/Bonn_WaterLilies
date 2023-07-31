@@ -1,0 +1,275 @@
+---
+title: "WaterLilies TopBottom"
+output: html_document
+date: "2023-01-05"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/Users/briannepalmer/Library/CloudStorage/OneDrive-Personal/LeafFossilization/Leaf Fossilization Experiments_3_4_7_8/Experiment 7")
+```
+
+This is the R code for all the analyses performed for Experiment 7 (water lilies, top and bottom). If there are questions about the code please contact Brianne Palmer (bpalmer[at]uni-bonn.de)
+
+There are several packages required to perform these analyses and create the figures. There are probably easier ways to do some of this, but if the code works, why change it?
+```{r, Load Libraries}
+library(phyloseq)
+library(plyr)
+library(data.table)
+library(tidyverse)
+library(vegan)
+library(ecodist)
+library(patchwork)
+library(RColorBrewer)
+library(ape)
+library(microbiome)
+library(microbiomeMarker)
+library(ampvis2)
+library(ggpubr)
+library(ggvenn)
+library(indicspecies)
+library(ggpattern)
+library(rstatix)
+library(ggrepel)
+```
+
+Load Data
+```{r}
+S18 <- fread("/Users/briannepalmer/Library/CloudStorage/OneDrive-Personal/LeafFossilization/Dataframes_to_merge/experiment7_18S.csv")
+
+S16 <- fread("/Users/briannepalmer/Library/CloudStorage/OneDrive-Personal/LeafFossilization/Dataframes_to_merge/experiment7_16S.csv")
+
+ITS <- fread("/Users/briannepalmer/Library/CloudStorage/OneDrive-Personal/LeafFossilization/Dataframes_to_merge/experiment7_ITS.csv")
+```
+
+```{r}
+# the metadata 
+SampleID <- c("NuBotR1", "NuBotR2", "NuBotR3", "NuTopR1", "NuTopR2", "NuTopR3", "NyBotR1", "NyBotR2", "NyBotR3", "NyTopR1", "NyTopR2", "NyTopR3")
+Location <-c("buried", "buried", "buried", "floating", "floating", "floating", "buried", "buried", "buried", "floating", "floating", "floating")
+plant <- c("Nuphar", "Nuphar", "Nuphar", "Nuphar", "Nuphar", "Nuphar", "Nymphaea", "Nymphaea", "Nymphaea", "Nymphaea", "Nymphaea", "Nymphaea")
+treatment <- c("NuBot", "NuBot", "NuBot", "NuTop", "NuTop", "NuTop", "NyBot", "NyBot", "NyBot", "NyTop", "NyTop", "NyTop")
+
+metadata <- data.frame(SampleID, Location, plant, treatment)
+```
+
+```{r}
+x18 <- seq(1:4161)
+x16 <- seq(1:3997)
+xITS <- seq(1:630)
+```
+
+```{r}
+ASV.16 <- as.vector(paste0("ASV", x16))
+ASV.ITS <- as.vector(paste0("ASV", xITS))
+S16$ASV <- ASV.16
+ITS$ASV <- ASV.ITS
+```
+
+```{r}
+# make new columns with count and relative abundance 
+S18[,c(2:13)] <-sweep(S18[,c(2:13)], 2, colSums(S18[,c(2:13)]), `/`)
+S18$n <- rowSums(S18[ , c(2:13)], na.rm=TRUE)
+
+S18.e <- S18 %>% filter(kingdom %in% c("Eukaryota", "Eukaryota:mito", "Eukaryota:plas"))
+ASV.18.e <- as.vector(paste0("ASV", seq(1:54)))
+S18.e$ASV <- ASV.18.e
+
+S18.p <- S18 %>% filter(kingdom %in% c("Bacteria", "Archaea"))
+ASV.18.p <- as.vector(paste0("ASV", seq(1:2231)))
+S18.p$ASV <- ASV.18.p
+
+S16[,c(2:13)] <-sweep(S16[,c(2:13)], 2, colSums(S16[,c(2:13)]), `/`)
+S16$n <- rowSums(S16[ , c(2:13)], na.rm=TRUE)
+ITS[,c(2:13)] <-sweep(ITS[,c(2:13)], 2, colSums(ITS[,c(2:13)]), `/`)
+ITS$n <- rowSums(ITS[ , c(2:13)], na.rm=TRUE)
+```
+
+Make another table with the ASVs as columns, this is necessary for the PCOA
+
+```{r, PCOA for 16S}
+transformed.16 <- t(S16[,c(2:13)])
+colnames(transformed.16) <- ASV.16
+transformed.16[is.na(transformed.16)] <-0
+transformed.16[c(1:3997)] <- sapply(transformed.16[c(1:3997)],as.numeric)
+
+otu.bray.16 <- vegdist(transformed.16, method = "bray")
+pcoaVS.16 <- ecodist::pco(otu.bray.16, negvals = "zero", dround = 0)
+
+pcoa1.16 = pcoaVS.16$vectors[,1] # adds the points of the NMDS 1 dimmension
+pcoa2.16 = pcoaVS.16$vectors[,2] # adds the points of the NMDS 2 dimmension
+
+MDS = data.frame(pcoa1.16 = pcoa1.16, pcoa2.16 = pcoa2.16)
+MDS = cbind(MDS, metadata)
+
+set.seed(12345)
+adonis2(transformed.16 ~ Location, metadata) # 0.026
+adonis2(transformed.16 ~ plant, metadata)# 0.671
+```
+Time to make some plots, but first, I want to make a color scheme for all the future figures. Hopefully, it is color blind friendly 
+```{r}
+pal <- palette(c('#882255','#88CCEE','#EE8866', '#44AA99', '#117733', '#332288', '#DDCC77', '#999933','#CC6677',  '#AA4499', '#DDDDDD'))
+
+# for small number of variables
+largepal <- colorRampPalette(pal)(50) # for large number of variables
+two.pal <- palette(c('#882255','#88CCEE'))
+```
+
+```{r, echo=FALSE}
+ggplot(MDS, aes(x = pcoa1.16, y = pcoa2.16, color = treatment, shape = plant)) + geom_point(size =3) + scale_color_manual(values = pal) + theme_bw() + theme(text=element_text(size=20)) + labs(x = "PCOA1", y = "PCOA2") + geom_polygon(aes(group = treatment, fill = treatment), alpha = 0.5)+ scale_fill_manual(values = pal) + ylim(-0.7, 0.6) + xlim(-0.7, 0.6) + geom_label_repel(aes(label = SampleID), max.overlaps = 5, size = 3, label.padding = 0.1)
+```
+
+Is there a difference between the plants only in the buried treatments 
+
+```{r}
+S16merged <- transformed.16
+S16merged <- as.data.frame(S16merged)
+S16merged$SampleID <- c("NuBotR1", "NuBotR2", "NuBotR3", "NuTopR1", "NuTopR2", "NuTopR3", "NyBotR1", "NyBotR2", "NyBotR3", "NyTopR1", "NyTopR2", "NyTopR3")
+S16merged$Location <- Location
+S16merged$plant <- plant
+
+S16buried <- S16merged %>% filter(Location == "buried")
+S16buried <- S16buried[, colSums(S16buried != 0) > 0]
+
+S16floating <- S16merged %>% filter(Location == "floating")
+S16floating <- S16floating[, colSums(S16floating != 0) > 0]
+
+set.seed(12345)
+adonis2(S16buried[,c(1:3484)] ~ plant, S16buried) # 0.6
+adonis2(S16floating[,c(1:1450)] ~ plant, S16floating) # 0.6
+
+```
+
+What is the difference between the communities for each treatment? What is the variability between the treatments and what causes this?
+
+#### PCOA with ITS 
+
+```{r, PCOA for ITS}
+transformed.ITS <- t(ITS[,c(2:13)])
+colnames(transformed.ITS) <- ASV.ITS
+transformed.ITS[is.na(transformed.ITS)] <-0
+transformed.ITS[c(1:630)] <- sapply(transformed.ITS[c(1:630)],as.numeric)
+
+otu.bray.ITS <- vegdist(transformed.ITS, method = "bray")
+pcoaVS.ITS <- ecodist::pco(otu.bray.ITS, negvals = "zero", dround = 0)
+
+pcoa1.ITS = pcoaVS.ITS$vectors[,1] # adds the points of the NMDS 1 dimmension
+pcoa2.ITS = pcoaVS.ITS$vectors[,2] # adds the points of the NMDS 2 dimmension
+
+MDS = data.frame(pcoa1.ITS = pcoa1.ITS, pcoa2.ITS = pcoa2.ITS)
+MDS = cbind(MDS, metadata)
+
+set.seed(12345)
+adonis2(transformed.ITS ~ Location, metadata) # 0.048
+adonis2(transformed.ITS ~ plant, metadata)# 0.166
+```
+
+```{r, echo=FALSE}
+ggplot(MDS, aes(x = pcoa1.ITS, y = pcoa2.ITS, color = treatment, shape = plant)) + geom_point(size =3) + scale_color_manual(values = pal) + theme_bw() + theme(text=element_text(size=20)) + labs(x = "PCOA1", y = "PCOA2") + geom_polygon(aes(group = treatment, fill = treatment), alpha = 0.5)+ scale_fill_manual(values = pal) + ylim(-0.7, 1.2) + xlim(-0.7, 1.2) + geom_label_repel(aes(label = SampleID), max.overlaps = 7, size = 3, label.padding = 0.1)
+```
+Is there a difference between the plants only in the buried treatments 
+
+```{r}
+ITSmerged <- transformed.ITS
+ITSmerged <- as.data.frame(ITSmerged)
+ITSmerged$SampleID <- c("NuBotR1", "NuBotR2", "NuBotR3", "NuTopR1", "NuTopR2", "NuTopR3", "NyBotR1", "NyBotR2", "NyBotR3", "NyTopR1", "NyTopR2", "NyTopR3")
+ITSmerged$Location <- Location
+ITSmerged$plant <- plant
+
+ITSburied <- ITSmerged %>% filter(Location == "buried")
+ITSburied <- ITSburied[, colSums(ITSburied != 0) > 0]
+
+ITSfloating <- ITSmerged %>% filter(Location == "floating")
+ITSfloating <- ITSfloating[, colSums(ITSfloating != 0) > 0]
+
+set.seed(12345)
+adonis2(ITSburied[,c(1:490)] ~ plant, ITSburied) # 0.4
+adonis2(ITSfloating[,c(1:378)] ~ plant, ITSfloating) # 0.2
+
+```
+
+### PCOA with 18S eukaryotes 
+
+```{r, PCOA for 18S}
+transformed.18S.e <- t(S18.e[,c(2:13)])
+colnames(transformed.18S.e) <- ASV.18.e
+transformed.18S.e[is.na(transformed.18S.e)] <-0
+transformed.18S.e[c(1:54)] <- sapply(transformed.18S.e[c(1:54)],as.numeric)
+
+otu.bray.18S.e <- vegdist(transformed.18S.e, method = "bray")
+pcoaVS.18S.e <- ecodist::pco(otu.bray.18S.e, negvals = "zero", dround = 0)
+
+pcoa1.18s.e = pcoaVS.18S.e$vectors[,1] # adds the points of the NMDS 1 dimmension
+pcoa2.18s.e = pcoaVS.18S.e$vectors[,2] # adds the points of the NMDS 2 dimmension
+
+MDS = data.frame(pcoa1.18s.e = pcoa1.18s.e, pcoa2.18s.e = pcoa2.18s.e)
+MDS = cbind(MDS, metadata)
+
+set.seed(12345)
+adonis2(transformed.18S.e ~ Location, metadata) # 0.042
+adonis2(transformed.18S.e ~ plant, metadata)# 0.652
+```
+```{r, echo=FALSE}
+ggplot(MDS, aes(x = pcoa1.18s.e, y = pcoa2.18s.e, color = treatment, shape = plant)) + geom_point(size =3) + scale_color_manual(values = pal) + theme_bw() + theme(text=element_text(size=20)) + labs(x = "PCOA1", y = "PCOA2") + geom_polygon(aes(group = treatment, fill = treatment), alpha = 0.5)+ scale_fill_manual(values = pal) + geom_label_repel(aes(label = SampleID), max.overlaps = 7, size = 3, label.padding = 0.1) + ylim(-0.8, 0.8) + xlim(-0.8, 0.8)
+```
+### PCOA with 18S eukaryotes 
+
+```{r, PCOA for 18S}
+transformed.18S.p <- t(S18.p[,c(2:13)])
+colnames(transformed.18S.p) <- ASV.18.p
+transformed.18S.p[is.na(transformed.18S.p)] <-0
+transformed.18S.p[c(1:2231)] <- sapply(transformed.18S.p[c(1:2231)],as.numeric)
+
+otu.bray.18S.p <- vegdist(transformed.18S.p, method = "bray")
+pcoaVS.18S.p <- ecodist::pco(otu.bray.18S.p, negvals = "zero", dround = 0)
+
+pcoa1.18s.p = pcoaVS.18S.p$vectors[,1] # adds the points of the NMDS 1 dimmension
+pcoa2.18s.p = pcoaVS.18S.p$vectors[,2] # adds the points of the NMDS 2 dimmension
+
+MDS = data.frame(pcoa1.18s.p = pcoa1.18s.p, pcoa2.18s.p = pcoa2.18s.p)
+MDS = cbind(MDS, metadata)
+
+set.seed(12345)
+adonis2(transformed.18S.p ~ Location, metadata) # 0.023
+adonis2(transformed.18S.p ~ plant, metadata)# 0.691
+```
+```{r, echo=FALSE}
+ggplot(MDS, aes(x = pcoa1.18s.p, y = pcoa2.18s.p, color = treatment, shape = plant)) + geom_point(size =3) + scale_color_manual(values = pal) + theme_bw() + theme(text=element_text(size=20)) + labs(x = "PCOA1", y = "PCOA2") + geom_polygon(aes(group = treatment, fill = treatment), alpha = 0.5)+ scale_fill_manual(values = pal) + geom_label_repel(aes(label = SampleID), max.overlaps = 7, size = 3, label.padding = 0.1) + ylim(-0.8, 0.6) + xlim(-0.8, 0.6)
+```
+for all datasets, there is a difference between depths, but more variability in the bottom leaves, likely due to the influcence of the sediment on the leaves and the top leaves were bleached by the sun
+
+## Phylum plots 
+
+Look at the abundance of each phylum and make bar charts for the phyla within each kingdom 
+
+For this, we have to make another table, I am calling it pivot here but it is a transposed table essentially 
+```{r, 16S}
+# remove ASVs that have no information 
+pivot.16S <- S16 %>% filter(kingdom != "Unassigned", kingdom != "Alveolata") %>% pivot_longer(cols = c(NuBotR1:NyTopR3), names_to = "SampleID")
+
+# if there are blanks, these should be NA
+pivot.16S[pivot.16S == ""] <- NA   
+
+pivot.16S <- pivot.16S %>% group_by(SampleID, kingdom, phylum, class, order, family, genus, species, ASV) %>% dplyr::summarize(value = sum(value))
+
+phylum.16S <- pivot.16S %>% dplyr::select(SampleID, kingdom, phylum, value) %>% group_by(SampleID, kingdom, phylum) %>% dplyr::summarize(value = sum(value))
+
+phylum.16S <- phylum.16S %>% pivot_wider(names_from = phylum, values_from = value)
+
+phylum.16S[c(3:50)] <- sapply(phylum.16S[c(3:50)],as.numeric)
+phylum.16S[is.na(phylum.16S)] <- 0
+
+phylum.16S <- merge(metadata, phylum.16S, by = "SampleID")
+
+# make a longer table, this is easier to graph with (hence why I named it ggplot)
+phylum.ggplot.16S <- pivot_longer(phylum.16S, cols = p__Crenarchaeota:`NA`,names_to = "phylum", values_to = "value")
+
+```
+
+```{r}
+ggplot(
+    phylum.ggplot.16S %>% filter(value > 0),
+    aes(fill = phylum, y = value, x = Location)
+  ) + geom_bar(position = "fill", stat = "identity") + theme(legend.position = "right") + labs(y = "Relative Abundance") + theme_bw() + scale_fill_manual(values = largepal) + theme(text=element_text(size=20), legend.position = "bottom", legend.direction = "horizontal", plot.margin=unit(c(0,7,0,5), 'cm'))
+```
+
+

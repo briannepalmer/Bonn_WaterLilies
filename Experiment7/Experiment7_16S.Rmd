@@ -1,0 +1,464 @@
+---
+title: "Water Lilies Floating and Buried 16S"
+author: "Brianne Palmer"
+date: "2023-02-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/Users/briannepalmer/Library/CloudStorage/OneDrive-Personal/LeafFossilization/Leaf Fossilization Experiments_3_4_7_8/Experiment 7")
+```
+There are several packages required to perform these analyses and create the figures. There are probably easier ways to do some of this, but if the code works, why change it?
+```{r, Load Libraries}
+library(phyloseq)
+library(plyr)
+library(data.table)
+library(tidyverse)
+library(vegan)
+library(ecodist)
+library(patchwork)
+library(RColorBrewer)
+library(ape)
+library(microbiome)
+library(microbiomeMarker)
+library(ampvis2)
+library(ggpubr)
+library(ggvenn)
+library(indicspecies)
+library(ggpattern)
+library(rstatix)
+library(ggrepel)
+```
+
+Load Data
+```{r}
+S16 <- fread("/Users/briannepalmer/Library/CloudStorage/OneDrive-Personal/LeafFossilization/Dataframes_to_merge/experiment7_16S.csv")
+```
+
+```{r}
+# the metadata 
+SampleID <- c("NuBotR1", "NuBotR2", "NuBotR3", "NuTopR1", "NuTopR2", "NuTopR3", "NyBotR1", "NyBotR2", "NyBotR3", "NyTopR1", "NyTopR2", "NyTopR3")
+Location <-c("buried", "buried", "buried", "floating", "floating", "floating", "buried", "buried", "buried", "floating", "floating", "floating")
+plant <- c("Nuphar", "Nuphar", "Nuphar", "Nuphar", "Nuphar", "Nuphar", "Nymphaea", "Nymphaea", "Nymphaea", "Nymphaea", "Nymphaea", "Nymphaea")
+treatment <- c("NuBot", "NuBot", "NuBot", "NuTop", "NuTop", "NuTop", "NyBot", "NyBot", "NyBot", "NyTop", "NyTop", "NyTop")
+
+metadata <- data.frame(SampleID, Location, plant, treatment)
+x16 <- seq(1:3997)
+```
+
+```{r}
+ASV.16 <- as.vector(paste0("ASV", x16))
+S16$ASV <- ASV.16
+```
+
+```{r}
+S16[,c(2:13)] <-sweep(S16[,c(2:13)], 2, colSums(S16[,c(2:13)]), `/`)
+S16$n <- rowSums(S16[ , c(2:13)], na.rm=TRUE)
+```
+
+Make another table with the ASVs as columns, this is necessary for the PCOA
+
+```{r, PCOA for 16S}
+transformed.16 <- t(S16[,c(2:13)])
+colnames(transformed.16) <- ASV.16
+transformed.16[is.na(transformed.16)] <-0
+transformed.16[c(1:3997)] <- sapply(transformed.16[c(1:3997)],as.numeric)
+
+otu.bray.16 <- vegdist(transformed.16, method = "bray")
+pcoaVS.16 <- ecodist::pco(otu.bray.16, negvals = "zero", dround = 0)
+
+pcoa1.16 = pcoaVS.16$vectors[,1] # adds the points of the NMDS 1 dimmension
+pcoa2.16 = pcoaVS.16$vectors[,2] # adds the points of the NMDS 2 dimmension
+
+MDS = data.frame(pcoa1.16 = pcoa1.16, pcoa2.16 = pcoa2.16)
+MDS = cbind(MDS, metadata)
+
+set.seed(12345)
+adonis2(transformed.16 ~ Location, metadata) # 0.026
+adonis2(transformed.16 ~ plant, metadata)# 0.671
+```
+Time to make some plots, but first, I want to make a color scheme for all the future figures. Hopefully, it is color blind friendly 
+```{r}
+pal <- palette(c('#882255','#88CCEE','#EE8866','#44AA99', '#117733', '#332288','#DDCC77','#999933','#CC6677','#AA4499','#DDDDDD'))
+largepal <- colorRampPalette(pal)(50) # for large number of variables
+two.pal <- palette(c('#882255','#88CCEE'))
+```
+
+```{r, echo=FALSE}
+ggplot(MDS, aes(x = pcoa1.16, y = pcoa2.16, color = treatment, shape = plant)) + geom_point(size =3) + scale_color_manual(values = pal) + theme_bw() + theme(text=element_text(size=20)) + labs(x = "PCOA1", y = "PCOA2") + geom_polygon(aes(group = treatment, fill = treatment), alpha = 0.5)+ scale_fill_manual(values = pal) + ylim(-0.7, 0.6) + xlim(-0.7, 0.6) + geom_label_repel(aes(label = SampleID), max.overlaps = 5, size = 3, label.padding = 0.1)
+```
+
+Is there a difference between the plants only in the buried treatments 
+
+```{r}
+S16merged <- transformed.16
+S16merged <- as.data.frame(S16merged)
+S16merged$SampleID <- c("NuBotR1", "NuBotR2", "NuBotR3", "NuTopR1", "NuTopR2", "NuTopR3", "NyBotR1", "NyBotR2", "NyBotR3", "NyTopR1", "NyTopR2", "NyTopR3")
+S16merged$Location <- Location
+S16merged$plant <- plant
+
+S16buried <- S16merged %>% filter(Location == "buried")
+S16buried <- S16buried[, colSums(S16buried != 0) > 0]
+
+S16floating <- S16merged %>% filter(Location == "floating")
+S16floating <- S16floating[, colSums(S16floating != 0) > 0]
+
+set.seed(12345)
+adonis2(S16buried[,c(1:3484)] ~ plant, S16buried) # 0.6
+adonis2(S16floating[,c(1:1450)] ~ plant, S16floating) # 0.6
+
+```
+
+Look at the abundance of each phylum and make bar charts for the phyla within each kingdom 
+
+For this, we have to make another table, I am calling it pivot here but it is a transposed table essentially 
+```{r, 16S}
+# remove ASVs that have no information 
+pivot.16S <- S16 %>% filter(kingdom != "Unassigned", kingdom != "Alveolata") %>% pivot_longer(cols = c(NuBotR1:NyTopR3), names_to = "SampleID")
+
+# if there are blanks, these should be NA
+pivot.16S[pivot.16S == ""] <- NA   
+
+pivot.16S <- pivot.16S %>% group_by(SampleID, kingdom, phylum, class, order, family, genus, species, ASV) %>% dplyr::summarize(value = sum(value))
+
+phylum.16S <- pivot.16S %>% dplyr::select(SampleID, kingdom, phylum, value) %>% group_by(SampleID, kingdom, phylum) %>% dplyr::summarize(value = sum(value))
+
+phylum.16S <- phylum.16S %>% pivot_wider(names_from = phylum, values_from = value)
+
+phylum.16S[c(3:50)] <- sapply(phylum.16S[c(3:50)],as.numeric)
+phylum.16S[is.na(phylum.16S)] <- 0
+
+phylum.16S <- merge(metadata, phylum.16S, by = "SampleID")
+
+# make a longer table, this is easier to graph with (hence why I named it ggplot)
+phylum.ggplot.16S <- pivot_longer(phylum.16S, cols = p__Crenarchaeota:`NA`,names_to = "phylum", values_to = "value")
+
+```
+
+```{r}
+pal2 <- palette(c('#332288','#882255','#88CCEE', '#DDCC77', '#999933','#CC6677', '#AA4499','#DDDDDD', '#EE8866','#44AA99','#117733'))
+largepal2 <- colorRampPalette(pal2)(48) 
+
+ggplot(phylum.ggplot.16S %>% filter(value > 0),
+    aes(fill = phylum, y = value, x = Location)
+  ) + geom_bar(position = "fill", stat = "identity") + theme(legend.position = "right") + labs(y = "Relative Abundance") + theme_bw() + scale_fill_manual(values = largepal2) + theme(text=element_text(size=12), legend.position = "bottom", legend.direction = "horizontal")
+```
+
+
+```{r}
+phylum.anova <- phylum.ggplot.16S %>% group_by(phylum) %>%
+  do(broom::tidy(TukeyHSD(aov(value ~ Location, data = .)))) %>%
+  ungroup
+
+phylum.anova.sig <- phylum.anova %>% filter(adj.p.value < 0.05) 
+
+phylum.anova.sig # Crenarchaeota, Desulfobacterota, Euryarchaeota, Halobacterota
+```
+
+```{r}
+S162 <- fread("/Users/briannepalmer/Library/CloudStorage/OneDrive-Personal/LeafFossilization/Dataframes_to_merge/experiment7_16S.csv")
+S162$ASV <- ASV.16
+
+otu.table <- S162[,c(2:13)]
+otu.table <- as.matrix(otu.table)
+rownames(otu.table) <- S162$ASV
+tax.table <- S162[,c(14:20)]
+tax.table <- as.matrix(tax.table)
+rownames(tax.table) <- S162$ASV
+
+otu.table <- otu_table(otu.table, taxa_are_rows = TRUE)
+tax.table <- tax_table(tax.table)
+sam.data <- as.matrix(metadata)
+sam.data <- sample_data(metadata)
+rownames(sam.data) <- metadata$SampleID
+
+ps <- phyloseq(otu.table, tax.table, sam.data)
+random_tree = rtree(ntaxa(ps), rooted=TRUE, tip.label=taxa_names(ps))
+
+ps = merge_phyloseq(ps,random_tree)
+ps <- subset_taxa(ps, kingdom !="Unassigned")
+ps <- subset_taxa(ps, phylum != "NA")
+
+p = plot_richness(ps, x="Location", color ="Location", measures=c("Observed","Shannon", "Simpson")) + geom_point() + theme_bw() + geom_violin() + scale_fill_manual(values = two.pal)
+p
+```
+Make a new dataframe with the ASVs from the pivot dataframe
+```{r}
+ASV <- pivot.16S %>% dplyr::select(SampleID, ASV, value) # the pivot dataframe also removed all the ASVs that were unassigned at the kingdom level 
+ASV <- ASV %>% pivot_wider(names_from = ASV, values_from = value)
+ASV[c(9:4005)] <- sapply(ASV[c(9:4005)],as.numeric)
+ASV[c(9:4005)][is.na(ASV[c(9:4005)])] <- 0
+ASV <- merge(metadata, ASV)
+ASV.gp <- ASV %>% group_by(SampleID, Location, plant, treatment) %>% summarize_at(vars(ASV3466:ASV993), sum)
+
+```
+
+```{r}
+ASV.long <- pivot_longer(ASV.gp, cols = ASV3466:ASV993, names_to = "ASV", values_to = "count")
+
+y <- ASV.long %>% dplyr::select(Location, ASV, count)
+
+Top = y %>% filter(Location == "floating")  %>% filter(count >0) %>% dplyr::select(ASV) #3392
+Bottom = y %>% filter(Location == "buried")  %>% filter(count >0) %>% dplyr::select(ASV) #6302
+
+y <- rbind(Top, Bottom)
+
+Location <- c(rep("floating", 3392), rep("buried", 6302))
+
+y$Location <- Location
+
+x <- list(Buried = y$ASV[3393:9695] ,Floating = y$ASV[1:3392])
+
+```
+
+```{r, echo=FALSE}
+venn <- ggvenn(
+  x, 
+  fill_color = two.pal,
+  stroke_size = 0.5, set_name_size = 8, show_percentage = TRUE) + theme(text = element_text(size = 20))
+venn
+```
+
+
+
+
+```{r}
+otu.table <- as.data.frame(ps@otu_table)
+tax.table <- as.data.frame(ps@tax_table)
+
+d <- amp_load(otutable = otu.table,
+              metadata = metadata,
+              taxonomy = tax.table)
+
+amp_rank_abundance(d, "Location", showSD = TRUE, log10_x = TRUE)
+
+amp_rarecurve(
+  d,
+  stepsize = 1000,
+  color_by = "SampleID",
+  facet_by = NULL,
+  facet_scales = "fixed"
+)
+
+amp_octave(
+  d,
+  tax_aggregate = "OTU",
+  group_by = 1L,
+  scales = "fixed",
+  num_threads = parallel::detectCores() - 2L
+)
+
+d.rare <-amp_rarefy(d, 65597)
+
+amp_heatmap(data = d.rare, 
+             tax_aggregate = "Genus",
+             tax_add = "Phylum",
+             group_by = c("SampleID"),
+             tax_show = 25,
+             plot_colorscale = "log10")
+
+alpha <- amp_alpha_diversity(d.rare)
+
+rich.lm <- lm(ObservedOTUs ~ Location, data = alpha)
+rich.aov <- aov(rich.lm)
+summary(rich.aov)
+
+div.lm <- lm(Shannon ~ Location, data = alpha)
+div.aov <- aov(div.lm)
+summary(div.aov)
+
+div.lm <- lm(Simpson ~ Location, data = alpha)
+div.aov <- aov(div.lm)
+summary(div.aov)
+
+div.lm <- lm(invSimpson ~ Location, data = alpha)
+div.aov <- aov(div.lm)
+summary(div.aov)
+
+amp_heatmap(d,
+            group_by = c("Location"),
+            tax_aggregate = "Genus",
+            plot_functions = TRUE,
+            tax_show = 25,
+            functions = c("Filamentous", "Chemoautotroph_mixotroph", "AOB", "NOB", "Aerobic heterotroph", "Nitrite reduction", "Sulfate reduction", "Fermentation", "Acetogen", "Short-chain fatty acids", "Sugars", "Proteins_amino acids"))
+
+
+amp_otu_network(
+  d,
+  min_abundance = 0,
+  color_by = "treatment",
+  tax_aggregate = "Phylum",
+  tax_add = NULL,
+  tax_show = 10,
+  tax_class = NULL,
+  tax_empty = "best",
+  normalise = TRUE
+)
+
+
+amp_venn(
+  d.rare,
+  group_by = "Location",
+  cut_a = 0.1,
+  cut_f = 80,
+  text_size = 5,
+  normalise = TRUE,
+  detailed_output = FALSE
+)
+
+```
+
+Look at richness and diversity between all samples
+```{r}
+ggplot(data = alpha, aes(x = SampleID, y = ObservedOTUs, color = Location, shape = plant)) + geom_point(size = 5) + theme_bw() + theme(legend.position = "none")  + labs(y = "# of ASV", x = "Location") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + theme_bw() + scale_color_manual(values = two.pal) + theme(text=element_text(size=20)) + theme (axis.text.x = element_text (angle = 45, vjust = 1, hjust=1)) 
+
+ggplot(data = alpha, aes(x = treatment, y = ObservedOTUs, fill = Location)) + geom_violin() + theme_bw() + theme(legend.position = "none")  + labs(y = "# of ASV", x = "Location") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + theme_bw() + scale_fill_manual(values = two.pal) + theme(text=element_text(size=20)) + theme (axis.text.x = element_text (angle = 45, vjust = 1, hjust=1)) 
+
+ggplot(data = alpha, aes(x = SampleID, y = Shannon, color = Location, shape = plant)) + geom_point(size = 5) + theme_bw() + theme(legend.position = "none")  + labs(y = "Shannon Diversity", x = "Location") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + theme_bw() + scale_color_manual(values = two.pal) + theme(text=element_text(size=20)) + theme (axis.text.x = element_text (angle = 45, vjust = 1, hjust=1)) 
+
+ggplot(data = alpha, aes(x = treatment, y = Shannon, fill = Location)) + geom_violin() + theme_bw() + theme(legend.position = "none")  + labs(y = "Shannon Diversity", x = "Location") + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + theme_bw() + scale_fill_manual(values = two.pal) + theme(text=element_text(size=20)) + theme (axis.text.x = element_text (angle = 45, vjust = 1, hjust=1)) 
+```
+
+
+
+
+
+```{r}
+bugbase <- fread("/Users/briannepalmer/Library/CloudStorage/OneDrive-Personal/LeafFossilization/Leaf Fossilization Experiments_3_4_7_8/Experiment 7/BugBaseWaterLilies.csv")
+```
+
+
+```{r}
+compare_means(Rel ~ Treatment, data = bugbase, 
+              group.by = "Function")
+
+bugbase.plot <- bugbase %>% filter(Function != "GramPositive", Function != "GramNegative") 
+
+stat.test <- bugbase.plot %>%
+  group_by(Function) %>%
+  wilcox_test(Rel ~ Treatment) %>%
+  adjust_pvalue(method = "bonferroni") %>%
+  add_significance()
+stat.test <- stat.test %>% add_xy_position(x = "Treatment")
+```
+
+```{r, echo=FALSE}
+bug.plot <- ggboxplot(bugbase.plot, x = "Treatment", y = "Rel", 
+  facet.by = "Function", scales = "free", fill = "Treatment", nrow =1) +  
+  stat_pvalue_manual(
+    stat.test,
+    label = "{p}"
+    ) + scale_fill_manual(values = two.pal) + theme_bw() + theme(legend.position = "none") + ggtitle("A.") + theme(text=element_text(size=20))
+
+```
+
+```{r,echo=FALSE}
+gram <- ggplot(bugbase %>% filter(Function == c("GramNegative", "GramPositive")), aes(x = Treatment, y = Rel/3, fill= Function)) + geom_bar(stat = "identity", position = "stack") + theme_bw()+ labs(x= "Location", y = "Relative Abundance", title = "D.") + scale_fill_manual(values = two.pal)+ theme(text=element_text(size=20))
+gram
+```
+
+Now, onto PiCRUST2 
+
+for more details see the file called "picrust_waterlilies.R" -- this is where I parsed a lot of the data and stored it in the data folder 
+
+```{r}
+p2_PW <- "/Users/briannepalmer/Library/CloudStorage/OneDrive-Personal/DNA_Databases/picrust2-2.5.1/picrust2_out_stratified/pathways_out/path_abun_unstrat.tsv.gz" # pathways
+p2_KO <- "/Users/briannepalmer/Library/CloudStorage/OneDrive-Personal/DNA_Databases/picrust2-2.5.1/picrust2_out_stratified/KO_metagenome_out/pred_metagenome_unstrat.tsv.gz" # KEGG
+p2_EC <-"/Users/briannepalmer/Library/CloudStorage/OneDrive-Personal/DNA_Databases/picrust2-2.5.1/picrust2_out_stratified/EC_metagenome_out/pred_metagenome_unstrat.tsv.gz"
+sam_tab <-"/Users/briannepalmer/Library/CloudStorage/OneDrive-Personal/LeafFossilization/Leaf Fossilization R/Experiment 7/data/Experiment7/experiment7_metadata_nosoil.csv"
+```
+
+```{r}
+# imports PiCRUST data as phyloseq object
+ps.pw <- import_picrust2(
+  p2_KO,
+  sam_tab,
+  trait = "PATHWAY")
+
+random_tree = rtree(ntaxa(ps.pw), rooted=TRUE, tip.label=taxa_names(ps.pw))
+ps.pw = merge_phyloseq(ps.pw,random_tree)
+ps.pw@sam_data <- sample_data(metadata)
+rownames(ps@sam_data) <- ps@sam_data$SampleID
+colnames(ps@otu_table) <- ps@sam_data$SampleID
+```
+
+```{r}
+data <- read.table("/Users/briannepalmer/Library/CloudStorage/OneDrive-Personal/DNA_Databases/picrust2-2.5.1/picrust2_out_pipeline/KO_metagenome_out/pred_metagenome_unstrat.tsv.gz", header=TRUE, sep="\t", row.names=1)
+data$pathway <- rownames(data)
+test <- merge(data, kegg_brite_mapping, by = "pathway")
+test <- test %>% separate(metadata_KEGG_Pathways, c("level1", "level2", "level3", "level4", "level5", "level6", "level7", "level8", "level9", "level10", "level11", "level12", "level13", "level14"), sep = ";")
+
+picrust <- test %>% pivot_longer(cols = c(NuBotR1:NyTopR3), names_to = "SampleID")
+
+picrust <- merge(metadata, picrust, by = "SampleID")
+```
+
+
+```{r, echo=FALSE}
+wh0 = genefilter_sample(ps.pw, filterfun_sample(function(x) x > 5), A=0.5*nsamples(ps)) # removes low abundance pathways
+GP1 = prune_taxa(wh0, ps.pw)
+GP1 = transform_sample_counts(GP1, function(x) 1E6 * x/sum(x))
+mb <- GP1
+library(DESeq2)
+
+#install.packages("C:/Users/Brianne/Downloads/locfit_1.5-9.tar.gz", repos = NULL, type="source")
+
+# First, we will convert the sequence count data from our phyloseq object into the proper format for DESeq2
+mb.dds <- phyloseq_to_deseq2(mb, ~ Location)
+
+# Next we need to estimate the size factors for our sequences
+gm_mean = function(x, na.rm=TRUE){
+    exp(sum(log(x[x > 0]), na.rm=na.rm) / length(x))
+}
+geoMeans = apply(counts(mb.dds), 1, gm_mean)
+mb.dds = estimateSizeFactors(mb.dds, geoMeans = geoMeans)
+
+# Finally, we can run the core DESeq2 algorithm
+mb.dds = DESeq(mb.dds, fitType="local")
+
+
+# Create a new dataframe from the results of our DESeq2 run
+mb.res = results(mb.dds)
+
+# Reorder the sequences by their adjusted p-values
+mb.res = mb.res[order(mb.res$padj, na.last=NA), ]
+
+# Set your alpha for testing significance, and filter out non-significant results
+alpha = 0.05
+mb.sigtab = mb.res[(mb.res$padj < alpha), ]
+
+mb.res = cbind(as(mb.res, "data.frame"), as(tax_table(mb)[rownames(mb.res), ], "matrix"))
+
+# Add taxonomy information to each sequence
+mb.sigtab = cbind(as(mb.sigtab, "data.frame"), as(tax_table(mb)[rownames(mb.sigtab), ], "matrix"))
+head(mb.sigtab)
+
+mb.sigtab$group<- ifelse(mb.sigtab$log2FoldChange < 0, 'buried','floating')
+mb.sigtab$color <- ifelse(mb.sigtab$log2FoldChange < 0, '#882255','#88CCEE')
+mb.ns <- mb.res %>% filter(padj > 0.05)
+
+volcano.plot <- ggplot(mb.sigtab, aes(x = log2FoldChange, y = -log10(padj))) + geom_point(color = mb.sigtab$color, size = 4) + geom_hline(aes(yintercept =-log10(0.05)), linetype = "dashed") + theme_bw() + ggtitle("B.") + geom_point(data = mb.ns, mapping = aes(x = mb.ns$log2FoldChange, y = -log10(mb.ns$padj)), color = "gray", size = 4) + ggrepel::geom_label_repel(aes(label = rownames(mb.sigtab)), max.overlaps = 10, size = 5, label.padding = 0.1) + theme(text=element_text(size=20)) 
+
+volcano.plot
+
+df <- picrust %>% filter(pathway %in% rownames(mb.sigtab))
+
+ggplot(df, aes(x = level2, y = value, fill = Location)) + geom_bar(stat= "identity", position = "dodge") + theme_bw() + theme(axis.text.x = element_text (angle = 90, vjust = 1, hjust=1), legend.position = "none", text=element_text(size=20))
+```
+
+Ordnation
+```{r, echo=FALSE}
+ordu = ordinate(GP1, "PCoA", "unifrac", weighted=TRUE)
+pw.ord <- plot_ordination(GP1, ordu, color="Location", shape="plant") + theme_bw() + labs(x = "PCOA1", y = "PCOA2")  + geom_point(size =5) + ggtitle("C.") + theme(text=element_text(size=20))
+pw.ord
+```
+
+STATISTICS TIME! (PERMANOVA)
+```{r}
+set.seed(12345)
+adonis2(phyloseq::distance(GP1, method="bray") ~ Location,
+       data = metadata) # 0.352
+adonis2(phyloseq::distance(GP1, method="bray") ~ plant,
+        data = metadata) # 0.37
+```
